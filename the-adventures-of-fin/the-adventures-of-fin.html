@@ -689,15 +689,20 @@ function buildLevel1() {
   L.deco('pumpkin', 22); L.deco('tree', 30);
 
   // ── S2 FIRST GAPS (36–71): two small pits + first log platform ──
-  L.ground(36, 43); L.ground(47, 52); L.ground(57, 71);
-  L.platform(48, 9, 4); L.coins(48, 8, 4); L.coins(44, 9, 3);
+  // Pits are 3 tiles (108px) so a running jump clears them easily, and pit 2
+  // sits far enough from the platform that running off it always lands on grass.
+  L.ground(36, 43); L.ground(47, 57); L.ground(61, 71);
+  L.platform(48, 10, 4); L.coins(48, 9, 4); L.coins(44, 9, 3);
   L.checkpoint(37); L.enemy('puppy', 63, 11); L.coins(66, 11, 3);
   L.deco('tree', 40); L.deco('pumpkin', 50); L.deco('pumpkin', 68);
 
   // ── S3 PUPPY PLAYGROUND (72–107): 8-wide pits bridged by logs, bees debut ──
+  // Platforms use rows 10 and 9 (a low-then-high staircase) so every jump is
+  // a comfortable 72px or 36px rise — well within Fin's 112px max jump.
   L.ground(72, 78); L.ground(87, 95); L.ground(104, 107);
-  L.platform(80, 9, 3); L.platform(84, 8, 3); L.platform(97, 8, 3); L.platform(101, 9, 3);
-  L.coins(80, 8, 3); L.coins(97, 7, 3);
+  L.platform(80, 10, 3); L.platform(84, 9, 3); L.platform(97, 10, 3); L.platform(101, 9, 3);
+  L.coins(80, 9, 3); L.coins(84, 8, 3); L.coins(97, 9, 3); L.coins(101, 8, 3);
+  L.checkpoint(72);
   L.enemy('puppy', 74, 11); L.enemy('puppy', 89, 11);
   L.enemy('bee', 82, 6); L.enemy('bee', 99, 6);
   L.deco('pumpkin', 73); L.deco('pumpkin', 94);
@@ -706,8 +711,8 @@ function buildLevel1() {
   L.ground(108, 112); L.ground(131, 143);
   L.platform(114, 10, 3); L.platform(118, 8, 3); L.platform(122, 10, 3); L.platform(126, 9, 3);
   L.coins(114, 9, 3); L.coins(118, 7, 3); L.coins(126, 8, 3);
-  L.enemy('bee', 116, 6); L.enemy('bee', 124, 5);
-  L.checkpoint(132); L.deco('tree', 110); L.deco('tree', 134); L.deco('pumpkin', 138);
+  L.enemy('bee', 116, 5); L.enemy('bee', 124, 5);
+  L.checkpoint(108); L.checkpoint(132); L.deco('tree', 110); L.deco('tree', 134); L.deco('pumpkin', 138);
 
   // ── S5 PUMPKIN PATCH (144–179): cozy field, stairs up a hill ──
   L.ground(144, 179); L.ground(166, 172, 9);
@@ -914,11 +919,7 @@ class Player {
     this.wasJumpHeld = jumpDown;
 
     // ---- fell into a pit? ----
-    if (this.y > WORLD_H + 120) loseHeart(true);
-  }
-  hurt() {
-    if (this.invuln > 0) return;
-    loseHeart(false);
+    if (this.y > WORLD_H + 120) fallInPit();
   }
 }
 
@@ -998,6 +999,15 @@ class Boomer {
     if (this.invuln > 0) { this.invuln -= dt; this.hurtFlash = Math.max(0, this.invuln); }
     else this.hurtFlash = 0;
 
+    // Not fighting yet? Boomer dozes peacefully at his end of the arena
+    // (gentle breathing) and does NOT attack until Fin steps in.
+    if (!bossActive) {
+      setAnim(this, 'idle');
+      this.squash = { x: 1, y: 1 + Math.sin(time0 * 2) * 0.015 };
+      advanceAnim(this, dt);
+      return;
+    }
+
     const speed = 90 + (3 - this.phase) * 55;          // faster as he loses health
     const interval = 1.6 - (3 - this.phase) * 0.3;      // hops more often
 
@@ -1026,8 +1036,9 @@ class Boomer {
       const landed = moveAndCollide(this, dt);
       if (this.onGround && wasAir) {
         // landing: send out jumpable dust shockwaves
-        spawnShockwave(this.x + this.w * 0.5, -1, 220);
-        if (this.phase <= 2) spawnShockwave(this.x + this.w * 0.5, 1, 220);
+        const floorY = this.y + this.h;   // where Boomer's feet landed
+        spawnShockwave(this.x + this.w * 0.5, -1, 220, floorY);
+        if (this.phase <= 2) spawnShockwave(this.x + this.w * 0.5, 1, 220, floorY);
         this.squash = { x: 1.2, y: 0.8 };
         this.mode = 'idle'; this.hopTimer = interval; this.vx = 0;
         setAnim(this, 'idle');
@@ -1171,9 +1182,10 @@ function drawLeaves(ctx) {
 
 /* ---------------- Shockwaves (boss dust attacks) ---------------- */
 const shockwaves = [];
-function spawnShockwave(x, dir, speed) {
-  const groundY = 12 * TILE;  // arena floor top
-  shockwaves.push({ x: x, y: groundY - 20, w: 26, h: 20, vx: dir * speed, life: 2.2 });
+function spawnShockwave(x, dir, speed, floorY) {
+  // floorY = the ground Boomer landed on (default: the arena floor)
+  const groundY = (floorY === undefined) ? 12 * TILE : floorY;
+  shockwaves.push({ x: x, y: groundY - 20, w: 26, h: 20, vx: dir * speed, life: 1.6 });
 }
 function updateShockwaves(dt) {
   for (let i = shockwaves.length - 1; i >= 0; i--) {
@@ -1182,7 +1194,7 @@ function updateShockwaves(dt) {
     if (s.life <= 0) { shockwaves.splice(i, 1); continue; }
     // hit Fin if he is standing in it (jump over it to be safe!)
     if (player.invuln <= 0 && aabb(player, s) && player.y + player.h > s.y + 4) {
-      player.hurt();
+      hurtByEnemy(s);
     }
   }
 }
@@ -1190,7 +1202,7 @@ function drawShockwaves(ctx) {
   for (const s of shockwaves) {
     const sx = s.x - cam.x, sy = s.y - cam.y;
     ctx.save();
-    ctx.globalAlpha = clamp(s.life / 2.2, 0, 1) * 0.9;
+    ctx.globalAlpha = clamp(s.life / 1.6, 0, 1) * 0.9;
     ctx.fillStyle = '#c9a86a';
     ellipse(ctx, sx + s.w / 2, sy + s.h, s.w * 0.7, s.h * 0.9);
     ctx.fillStyle = '#efe0c0';
@@ -1331,14 +1343,15 @@ function drawHillLayer(factor, baseY, amp, freq, color, colorBottom) {
 }
 
 function drawTreeLine() {
-  const factor = 0.65, spacing = 150;
+  const factor = 0.65, spacing = 185;
   const off = cam.x * factor;
   const start = Math.floor(off / spacing) - 1;
   for (let i = start; i < start + Math.ceil(VIEW_W / spacing) + 3; i++) {
-    const wx = i * spacing + hash(i) * 60;
+    const wx = i * spacing + hash(i) * 70;
     const sx = wx - off;
-    if (sx < -140 || sx > VIEW_W + 140) continue;
-    drawFallTree(ctx, sx, VIEW_H - 26, 0.7 + hash(i * 3) * 0.4, i);
+    if (sx < -220 || sx > VIEW_W + 220) continue;
+    // BIG trees rooted at the grass horizon — their fall colors tower over the ground
+    drawFallTree(ctx, sx, 438, 1.8 + hash(i * 3) * 0.6, i);
   }
 }
 
@@ -1649,18 +1662,29 @@ function drawGameOver() {
 }
 
 /* ---------------- Losing a heart & respawning ---------------- */
-function loseHeart(isPit) {
-  if (player.invuln > 0 && !isPit) return;   // already hurt recently
+/* ---------------- Getting hurt ----------------
+   Touching a bad guy: Fin bounces away and blinks (NO teleport).
+   Falling in a pit: Fin loses a heart and restarts at the last checkpoint. */
+function hurtByEnemy(source) {
+  if (player.invuln > 0) return;              // mercy time after a hit
+  player.invuln = 1.2;
   player.hearts = Math.max(0, player.hearts - 1);
-  player.invuln = 1.4;                        // brief mercy time so one hit = one heart
   SFX.hurt();
   spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#e8203a', 12, 'poof');
-  if (player.hearts <= 0) {
-    state = 'gameover';
-    gameOverTimer = 0;
-    SFX.gameover();
-    return;
-  }
+  // knock Fin away from whatever hit him — a little bounce, NOT a teleport
+  const srcX = source ? source.x + source.w / 2 : player.x;
+  player.vx = (player.x + player.w / 2 < srcX) ? -230 : 230;
+  player.vy = -300;
+  if (player.hearts <= 0) { state = 'gameover'; gameOverTimer = 0; SFX.gameover(); }
+}
+
+function fallInPit() {
+  if (player.hearts <= 0) return;
+  player.hearts = Math.max(0, player.hearts - 1);
+  player.invuln = 1.4;
+  SFX.hurt();
+  spawnBurst(player.x + player.w / 2, WORLD_H - 80, '#e8203a', 12, 'poof');
+  if (player.hearts <= 0) { state = 'gameover'; gameOverTimer = 0; SFX.gameover(); return; }
   // put Fin back at the last checkpoint (or safely inside the arena during the boss fight)
   if (bossActive) { player.x = cam.x + 80; player.y = 12 * TILE - player.h; }
   else { player.x = respawn.x; player.y = respawn.y; }
@@ -1696,8 +1720,8 @@ function handleEnemyCollisions() {
         spawnBurst(e.x + e.w / 2, e.y + e.h / 2, '#ffffff', 12, 'poof');
       }
     } else {
-      // touched from the side or below — ouch!
-      if (e !== boss || boss.alive) player.hurt();
+      // touched from the side or below — ouch! Fin gets knocked away
+      if (e !== boss || boss.alive) hurtByEnemy(e);
     }
   }
 }
@@ -1747,6 +1771,7 @@ function update(dt) {
     if (!bossActive && boss && player.x > (WORLD_W - VIEW_W) + 40) {
       bossActive = true;
       boss.hopTimer = 1.0;
+      player.invuln = Math.max(player.invuln, 0.6);   // a short grace moment as Boomer wakes up
     }
     // keep Fin inside the arena AND on screen during the fight
     if (bossActive) player.x = clamp(player.x, cam.x + 24, 214 * TILE - player.w);
@@ -1808,11 +1833,22 @@ fitCanvas();
 resetGame();          // build the world
 state = 'title';      // ...but wait on the title screen
 
+// Fixed-timestep game loop: the game logic ALWAYS moves in exact 1/60-second
+// steps, so jump height is identical on a 30fps, 60fps, or 144fps screen.
+const STEP = 1 / 60;
 let last = performance.now();
+let acc = 0;                            // game time we still owe the logic
 function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);  // clamped delta time
+  const frameTime = Math.min((now - last) / 1000, 0.25);  // ignore long pauses
   last = now;
-  update(dt);
+  acc += frameTime;
+  let steps = 0;
+  while (acc >= STEP && steps < 5) {    // catch up in fixed steps (max 5)
+    update(STEP);
+    acc -= STEP;
+    steps++;
+  }
+  if (acc > STEP) acc = 0;              // too far behind? drop the backlog
   render();
   requestAnimationFrame(loop);
 }
