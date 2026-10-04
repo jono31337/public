@@ -71,6 +71,39 @@ const COL = {
   red: '#e8203a', teeth: '#fdf6e3'
 };
 
+// ---- Difficulty & level choices (used by the main menu) ----
+const DIFFICULTIES = [
+  { name: 'EASY',   hearts: 5 },
+  { name: 'NORMAL', hearts: 3 },
+  { name: 'HARD',   hearts: 1 }
+];
+const LEVELS = [
+  { name: 'Fall Fields',        icon: '🍁', theme: 'fall',   build: buildLevel1 },
+  { name: 'Ice Ice Antarctica', icon: '❄️', theme: 'winter', build: buildLevel2 }
+];
+let currentLevel = 0;                                 // which level is loaded right now
+const menu = { row: 0, level: 0, difficulty: 1 };     // menu selections (remembered between visits)
+let waterZones = [];                                  // gaps filled with icy water (winter levels)
+
+// ---- Themes: one set of colors & rules per level look ----
+const THEMES = {
+  fall: {
+    skyTop: COL.skyTop, skyMid: '#9fd8f5', skyBot: COL.skyBot,
+    farHill: ['#a9c2e0', '#cfe0f0'], midHill: ['#8fb98a', '#a9cf9f'],
+    trees: 'fall', ground: 'grass', platform: 'log', brick: 'brick',
+    ambient: 'leaf', water: false, slipperyTiles: '', scarf: false,
+    coin: 'coin', checkpoint: 'flag'
+  },
+  winter: {
+    skyTop: '#37a8e8', skyMid: '#8fd4f0', skyBot: '#e8f6ff',
+    farHill: ['#cfe0f2', '#eef6fc'], midHill: ['#b9d9e8', '#dcedf6'],
+    trees: 'pine', ground: 'snow', platform: 'ice', brick: 'iceblock',
+    ambient: 'flake', water: true, slipperyTiles: '=BI', scarf: true,
+    coin: 'snowcoin', checkpoint: 'candycane'
+  }
+};
+let theme = THEMES.fall;
+
 /* ================================================================
    2. UTILITIES — tiny helper functions used everywhere
    ================================================================ */
@@ -137,7 +170,12 @@ const SFX = {
   bossHit(){ beep(160, 60, 0.30, 'sawtooth', 0.20); beep(90, 40, 0.35, 'triangle', 0.16); },
   checkpoint(){ beep(660, 660, 0.10, 'sine', 0.12); setTimeout(() => beep(990, 990, 0.16, 'sine', 0.12), 90); },
   win()    { const notes = [523, 659, 784, 1047, 1319]; notes.forEach((n, i) => setTimeout(() => beep(n, n, 0.22, 'triangle', 0.14), i * 130)); },
-  gameover(){ const notes = [440, 349, 262, 196]; notes.forEach((n, i) => setTimeout(() => beep(n, n, 0.28, 'triangle', 0.13), i * 180)); }
+  gameover(){ const notes = [440, 349, 262, 196]; notes.forEach((n, i) => setTimeout(() => beep(n, n, 0.28, 'triangle', 0.13), i * 180)); },
+  freeze() { beep(1400, 300, 0.5, 'sine', 0.12); beep(900, 200, 0.55, 'triangle', 0.08); },   // brrr!
+  crack()  { beep(220, 70, 0.14, 'sawtooth', 0.14); },                                        // ice shatter
+  slide()  { beep(160, 420, 0.45, 'triangle', 0.10); },                                       // penguin belly-slide
+  menuBlip()  { beep(640, 640, 0.05, 'square', 0.06); },                                      // menu move
+  menuStart() { beep(520, 780, 0.12, 'square', 0.09); setTimeout(() => beep(780, 1040, 0.16, 'square', 0.09), 110); }
 };
 
 /* ================================================================
@@ -244,6 +282,23 @@ function drawFin(ctx, w, h, p) {
   ctx.moveTo(w * 0.52, by + 1);
   ctx.quadraticCurveTo(w * 0.64, by - 4, w * 0.68, by + 1);
   ctx.closePath(); ctx.fill();
+
+  // cozy red scarf (winter levels only!) — a collar near the top, with a tail
+  if (theme && theme.scarf) {
+    const sy0 = by + bh * 0.08;
+    ctx.fillStyle = '#e03030';
+    roundRect(ctx, bx - 1, sy0, bw + 2, 6, 3); ctx.fill();
+    ctx.fillStyle = '#a01010';
+    ctx.fillRect(bx - 1, sy0 + 1.8, bw + 2, 1.4);
+    // a little tail hanging off the back (left) side, swaying as Fin runs
+    ctx.fillStyle = '#e03030';
+    const sw = Math.sin(time0 * 6) * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx - 1, sy0 + 3);
+    ctx.quadraticCurveTo(bx - 7 + sw, sy0 + 10, bx - 3 + sw, sy0 + 17);
+    ctx.lineTo(bx + 3, sy0 + 4);
+    ctx.closePath(); ctx.fill();
+  }
 
   // pale belly
   ctx.fillStyle = COL.belly;
@@ -507,7 +562,398 @@ function drawCoin(ctx, cx, cy, r, spin) {
   ctx.translate(cx, cy); ctx.scale(Math.max(0.15, sx), 1);
   ctx.fillStyle = '#f2c94c'; ellipse(ctx, 0, 0, r, r);
   ctx.fillStyle = '#e0a92f'; ellipse(ctx, 0, 0, r * 0.68, r * 0.68);
+  // winter coins have a tiny snowflake stamped on them!
+  if (theme && theme.coin === 'snowcoin') {
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 1.1;
+    for (let k = 0; k < 3; k++) {
+      const a = k * Math.PI / 3;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * -r * 0.5, Math.sin(a) * -r * 0.5);
+      ctx.lineTo(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5);
+      ctx.stroke();
+    }
+  }
   ctx.fillStyle = '#fff6c0'; ellipse(ctx, -r * 0.25, -r * 0.25, r * 0.22, r * 0.3);
+  ctx.restore();
+}
+
+/* ---------------- WINTER ART ---------------- */
+
+// A snow-covered pine tree for the background tree line.
+function drawSnowyPine(ctx, x, baseY, s, seed) {
+  ctx.save(); ctx.translate(x, baseY); ctx.scale(s, s);
+  // trunk
+  ctx.fillStyle = '#6f4a24';
+  ctx.fillRect(-5, -34, 10, 34);
+  // three stacked green tiers, each with a snow cap on top
+  const tiers = [
+    { y: -30, hw: 34, hh: 32 },
+    { y: -54, hw: 27, hh: 26 },
+    { y: -74, hw: 20, hh: 22 }
+  ];
+  for (const t of tiers) {
+    ctx.fillStyle = '#2f6b46';
+    ctx.beginPath();
+    ctx.moveTo(0, t.y - t.hh);
+    ctx.lineTo(-t.hw, t.y);
+    ctx.lineTo(t.hw, t.y);
+    ctx.closePath(); ctx.fill();
+    // white snow sitting on the upper part of the tier
+    ctx.fillStyle = '#f4faff';
+    ctx.beginPath();
+    ctx.moveTo(0, t.y - t.hh);
+    ctx.lineTo(-t.hw * 0.55, t.y - t.hh * 0.32);
+    ctx.lineTo(-t.hw * 0.18, t.y - t.hh * 0.42);
+    ctx.lineTo(0, t.y - t.hh * 0.16);
+    ctx.lineTo(t.hw * 0.3, t.y - t.hh * 0.46);
+    ctx.lineTo(t.hw * 0.55, t.y - t.hh * 0.32);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// A friendly snowman with a hat or scarf (varies with the seed).
+function drawSnowman(ctx, x, baseY, s, seed) {
+  ctx.save(); ctx.translate(x, baseY); ctx.scale(s, s);
+  // stick arms behind the body
+  ctx.strokeStyle = '#6f4a24'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-9, -22); ctx.lineTo(-24, -30); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(9, -22); ctx.lineTo(24, -30); ctx.stroke();
+  // two stacked snowballs
+  ctx.fillStyle = '#f4faff'; ellipse(ctx, 0, -14, 16, 14);
+  ctx.fillStyle = '#ffffff'; ellipse(ctx, 0, -36, 11, 10);
+  ctx.strokeStyle = 'rgba(160,200,225,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0, -14, 16, 14, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, -36, 11, 10, 0, 0, Math.PI * 2); ctx.stroke();
+  // coal eyes, carrot nose, buttons
+  ctx.fillStyle = '#222';
+  ellipse(ctx, -4, -38, 1.7, 1.7); ellipse(ctx, 4, -38, 1.7, 1.7);
+  ellipse(ctx, 0, -22, 1.6, 1.6); ellipse(ctx, 0, -15, 1.6, 1.6);
+  ctx.fillStyle = '#e8802a';
+  ctx.beginPath(); ctx.moveTo(0, -35); ctx.lineTo(9, -33); ctx.lineTo(0, -31); ctx.closePath(); ctx.fill();
+  // hat OR scarf for variety
+  if (hash(seed) > 0.5) {
+    ctx.fillStyle = '#d02030';
+    roundRect(ctx, -10, -47, 20, 6, 2); ctx.fill();
+    ctx.fillRect(-8, -54, 16, 8);
+    ctx.fillStyle = '#fff'; ellipse(ctx, 0, -55, 4, 4);
+  } else {
+    ctx.fillStyle = '#d02030';
+    roundRect(ctx, -10, -47, 20, 5, 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-3, -47, 4, 5);
+    ctx.fillRect(5, -47, 4, 5);
+  }
+  ctx.restore();
+}
+
+// A candy-cane checkpoint pole with a little flag.
+function drawCandyCane(ctx, x, baseY, active) {
+  ctx.save();
+  // striped pole
+  for (let i = 0; i < 11; i++) {
+    ctx.fillStyle = (i % 2) ? '#e03030' : '#f8f8f8';
+    ctx.fillRect(x, baseY - 44 + i * 4, 5, 4);
+  }
+  // hook at the top
+  ctx.strokeStyle = '#f8f8f8'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(x + 8, baseY - 44, 8, Math.PI, 0); ctx.stroke();
+  ctx.strokeStyle = '#e03030'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x + 8, baseY - 44, 8, Math.PI, 0); ctx.stroke();
+  // small flag (green when this checkpoint is switched on)
+  ctx.fillStyle = active ? '#5fbf4a' : '#c0c0c0';
+  ctx.beginPath();
+  ctx.moveTo(x + 5, baseY - 40);
+  ctx.lineTo(x + 30, baseY - 32);
+  ctx.lineTo(x + 5, baseY - 24);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// Ice-block tile (used for frozen platforms and the slippery arena floor).
+function drawIceBlockTile(ctx, sx, sy, top) {
+  ctx.fillStyle = '#8ec9e8';
+  roundRect(ctx, sx + 1, sy + 1, TILE - 2, TILE - 2, 5); ctx.fill();
+  ctx.fillStyle = '#b8e0f2';
+  roundRect(ctx, sx + 2, sy + 2, TILE - 4, TILE - 5, 5); ctx.fill();
+  // white corner shine + gloss streak
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  ctx.moveTo(sx + 5, sy + TILE - 6);
+  ctx.lineTo(sx + TILE - 8, sy + 5);
+  ctx.lineTo(sx + TILE - 4, sy + 9);
+  ctx.lineTo(sx + 9, sy + TILE - 3);
+  ctx.closePath(); ctx.fill();
+  // a couple of little cracks
+  ctx.strokeStyle = 'rgba(120,180,210,0.7)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx + 10, sy + 6); ctx.lineTo(sx + 15, sy + 14);
+  ctx.moveTo(sx + 24, sy + 20); ctx.lineTo(sx + 28, sy + 28);
+  ctx.stroke();
+  if (top) {
+    ctx.fillStyle = '#f4faff';
+    roundRect(ctx, sx - 1, sy - 3, TILE + 2, 7, 3); ctx.fill();
+  }
+}
+
+// Snow-topped ground tile.
+function drawSnowGroundTile(ctx, sx, sy, hasSolidAbove, col, row) {
+  ctx.fillStyle = '#bfe4f2';
+  ctx.fillRect(sx, sy, TILE, TILE);
+  const v = hash(col * 3.1 + row * 7.7);
+  ctx.fillStyle = 'rgba(255,255,255,' + (0.05 + v * 0.06).toFixed(3) + ')';
+  ellipse(ctx, sx + 9 + v * 18, sy + 14 + v * 12, 7 + v * 5, 4 + v * 4);
+  ctx.fillStyle = 'rgba(120,170,205,0.25)';
+  ellipse(ctx, sx + 24 - v * 10, sy + 27, 5, 3);
+  if (!hasSolidAbove) {
+    ctx.fillStyle = 'rgba(150,195,220,0.35)';
+    ctx.fillRect(sx, sy + 7, TILE, 4);
+    ctx.fillStyle = '#f4faff';
+    roundRect(ctx, sx - 1, sy - 5, TILE + 2, 14, 5); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, sx - 1, sy - 5, TILE + 2, 6, 4); ctx.fill();
+  }
+}
+
+/* ---------------- TURNIP (winter enemy) ----------------
+   A little egg-shaped penguin plush with a big silver face patch
+   and huge star-sparkle eyes. Black one is slow; red one is angry + fast. */
+function drawTurnip(ctx, w, h, p) {
+  p = p || {};
+  const kind = p.kind || 'black';
+  const walk = p.walk || 0;
+  const angry = p.angry;
+  const dark = kind === 'black';
+  const body = dark ? '#1c2440' : '#e03028';
+  const bodyHi = dark ? '#2c3c66' : '#f05040';
+  const bodyLo = dark ? '#11172c' : '#a01c16';
+  const patch = dark ? '#d8dee8' : '#f0eadf';
+  const beak = dark ? '#b8c840' : '#e8d040';
+  const foot = dark ? '#11172c' : '#e8d040';
+
+  const wob = [0, 1, 0, -1][walk % 4];
+  const lean = angry ? 0.09 : 0;   // red turnip leans forward (angry!)
+
+  ctx.save();
+  ctx.translate(w * 0.5, h);
+  ctx.rotate(lean * (p.flipLean === false ? 1 : 1));
+  ctx.translate(-w * 0.5, -h);
+
+  // tiny feet
+  ctx.fillStyle = foot;
+  ellipse(ctx, w * 0.36, h - 2 + wob * 0.8, 4.5, 3);
+  ellipse(ctx, w * 0.64, h - 2 - wob * 0.8, 4.5, 3);
+
+  // little flippers at the sides
+  ctx.fillStyle = bodyLo;
+  ellipse(ctx, w * 0.10, h * 0.66, 4, 6.5);
+  ellipse(ctx, w * 0.90, h * 0.66, 4, 6.5);
+
+  // egg body
+  const cx = w * 0.5, cy = h * 0.54;
+  const g = ctx.createRadialGradient(cx - 4, cy - 5, 2, cx, cy, w * 0.6);
+  g.addColorStop(0, bodyHi); g.addColorStop(0.6, body); g.addColorStop(1, bodyLo);
+  ctx.fillStyle = g;
+  ellipse(ctx, cx, cy, w * 0.46, h * 0.5);
+
+  // big pale face/belly patch, shaped like the top of a heart
+  ctx.fillStyle = patch;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - h * 0.05);
+  ctx.quadraticCurveTo(cx - w * 0.30, cy - h * 0.42, cx - w * 0.34, cy - h * 0.12);
+  ctx.quadraticCurveTo(cx - w * 0.36, cy + h * 0.30, cx, cy + h * 0.46);
+  ctx.quadraticCurveTo(cx + w * 0.36, cy + h * 0.30, cx + w * 0.34, cy - h * 0.12);
+  ctx.quadraticCurveTo(cx + w * 0.30, cy - h * 0.42, cx, cy - h * 0.05);
+  ctx.closePath(); ctx.fill();
+  // stitch outline
+  ctx.strokeStyle = dark ? 'rgba(150,160,185,0.9)' : 'rgba(200,180,160,0.9)';
+  ctx.lineWidth = 1; ctx.stroke();
+
+  // huge sparkly eyes with a star twinkle
+  const ex = w * 0.30, ex2 = w * 0.70, ey = cy - h * 0.08;
+  for (const X of [ex, ex2]) {
+    ctx.fillStyle = '#101828'; ellipse(ctx, X, ey, 4.2, 5.0);
+    ctx.fillStyle = '#3f8fe0'; ellipse(ctx, X, ey + 1.2, 3.0, 3.4);
+    ctx.fillStyle = '#0a1020'; ellipse(ctx, X, ey + 0.4, 1.5, 1.9);
+    ctx.fillStyle = '#fff'; ellipse(ctx, X - 1.2, ey - 1.6, 1.0, 1.2);
+    // star sparkle (twinkles over time)
+    const tw = 1.4 + Math.sin(time0 * 6 + X) * 0.6;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(X - tw, ey - 2.6); ctx.lineTo(X + tw, ey - 2.6);
+    ctx.moveTo(X, ey - 2.6 - tw); ctx.lineTo(X, ey - 2.6 + tw);
+    ctx.stroke();
+  }
+
+  // pink blush cheeks
+  ctx.fillStyle = 'rgba(240,150,170,0.6)';
+  ellipse(ctx, ex, ey + 6, 2.6, 1.8);
+  ellipse(ctx, ex2, ey + 6, 2.6, 1.8);
+
+  // tiny beak
+  ctx.fillStyle = beak;
+  ellipse(ctx, cx, cy + h * 0.10, 3.0, 1.8);
+
+  // angry eyebrows for the red turnip
+  if (angry) {
+    ctx.strokeStyle = '#7a1010'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ex - 4, ey - 7); ctx.lineTo(ex + 3, ey - 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ex2 + 4, ey - 7); ctx.lineTo(ex2 - 3, ey - 4); ctx.stroke();
+  }
+
+  // rim light
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, w * 0.46, -1.9, -0.8); ctx.stroke();
+
+  ctx.restore();
+}
+
+/* ---------------- PUFFY PENGUIN (Level 2 BOSS) ----------------
+   A giant fluffy blue-and-white penguin: turquoise fur, a huge
+   shaggy white belly-bib, tiny black eyes and a golden beak nub. */
+function drawPuffy(ctx, w, h, p) {
+  p = p || {};
+  const angry = p.angry;
+  const slide = p.slide;
+  const bob = p.bob || 0;
+  const flash = p.flash || 0;
+  const cx = w * 0.5, cy = h * 0.56;
+
+  ctx.save();
+  if (slide) {
+    // squashed low + leaning forward when belly-sliding
+    ctx.translate(cx, h);
+    ctx.scale(1.06, 0.9);
+    ctx.translate(-cx, -h);
+  }
+
+  // floppy side flippers
+  ctx.fillStyle = '#1d7fb0';
+  const flip = slide ? 0.9 : 0.2;
+  ctx.save(); ctx.translate(w * 0.12, cy + 4); ctx.rotate(flip);
+  ellipse(ctx, 0, 0, 9, 16); ctx.restore();
+  ctx.save(); ctx.translate(w * 0.88, cy + 4); ctx.rotate(-flip);
+  ellipse(ctx, 0, 0, 9, 16); ctx.restore();
+
+  // big round turquoise body
+  const g = ctx.createRadialGradient(cx - 16, cy - 18, 8, cx, cy, w * 0.55);
+  g.addColorStop(0, '#6fd0f0'); g.addColorStop(0.55, '#2fa8d8'); g.addColorStop(1, '#1d7fb0');
+  ctx.fillStyle = g;
+  ellipse(ctx, cx, cy, w * 0.47, h * 0.48);
+
+  // shaggy fur tufts around the outline
+  ctx.fillStyle = '#2fa8d8';
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.4;
+    const tx = cx + Math.cos(a) * w * 0.44, ty = cy + Math.sin(a) * h * 0.44;
+    ctx.beginPath();
+    ctx.moveTo(tx - 5, ty + 5); ctx.lineTo(tx + 2, ty - 6); ctx.lineTo(tx + 6, ty + 5);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // HUGE white fluffy belly bib
+  ctx.fillStyle = '#f8fcff';
+  ellipse(ctx, cx, cy + h * 0.14, w * 0.34, h * 0.32);
+  // fluff wisps along the bib edge
+  for (let i = 0; i < 7; i++) {
+    const a = Math.PI * (0.15 + 0.7 * (i / 6));
+    ellipse(ctx, cx + Math.cos(a) * w * 0.30, cy + h * 0.14 + Math.sin(a) * h * 0.30, 5, 5);
+  }
+  // two tall white lobes around the eyes
+  ellipse(ctx, cx - w * 0.13, cy - h * 0.16, w * 0.15, h * 0.16);
+  ellipse(ctx, cx + w * 0.13, cy - h * 0.16, w * 0.15, h * 0.16);
+
+  // tiny black bead eyes with glints
+  ctx.fillStyle = '#0c0c0c';
+  ellipse(ctx, cx - w * 0.13, cy - h * 0.16, 3.2, 3.2);
+  ellipse(ctx, cx + w * 0.13, cy - h * 0.18, 3.2, 3.2);
+  ctx.fillStyle = '#fff';
+  ellipse(ctx, cx - w * 0.13 + 1, cy - h * 0.16 - 1, 1.1, 1.1);
+  ellipse(ctx, cx + w * 0.13 + 1, cy - h * 0.18 - 1, 1.1, 1.1);
+
+  // little golden beak nub
+  ctx.fillStyle = '#f0c030';
+  ellipse(ctx, cx, cy - h * 0.05, 4.5, 3.4);
+  ctx.fillStyle = '#d9a010';
+  ellipse(ctx, cx, cy - h * 0.05 + 1.4, 3.2, 1.6);
+
+  // angry brows after the first stomp
+  if (angry) {
+    ctx.strokeStyle = '#134a6a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx - w * 0.20, cy - h * 0.24); ctx.lineTo(cx - w * 0.07, cy - h * 0.20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + w * 0.20, cy - h * 0.26); ctx.lineTo(cx + w * 0.07, cy - h * 0.21); ctx.stroke();
+  }
+
+  // wobbly spiky crown tuft
+  ctx.save();
+  ctx.translate(cx, cy - h * 0.44);
+  ctx.rotate(Math.sin(time0 * 6) * 0.15);
+  ctx.fillStyle = '#2fa8d8';
+  ctx.beginPath();
+  ctx.moveTo(-8, 4); ctx.lineTo(-3, -12); ctx.lineTo(1, 2);
+  ctx.lineTo(6, -10); ctx.lineTo(9, 4); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // rim light
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, w * 0.47, -1.9, -0.8); ctx.stroke();
+
+  // white hit flash
+  if (flash > 0) {
+    ctx.globalAlpha = flash * 0.7;
+    ctx.fillStyle = '#fff';
+    ellipse(ctx, cx, cy, w * 0.47, h * 0.47);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+// Animated icy water surface + sparkles for the gaps.
+function drawWater(ctx) {
+  for (const z of waterZones) {
+    const x = z.x - cam.x, w = z.w;
+    if (x > VIEW_W || x + w < 0) continue;
+    const y = z.surfaceY - cam.y;
+    const g = ctx.createLinearGradient(0, y, 0, VIEW_H);
+    g.addColorStop(0, 'rgba(127,208,240,0.85)');
+    g.addColorStop(1, 'rgba(47,143,208,0.92)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, w, VIEW_H - y);
+    // wavy white surface line
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let px = 0; px <= w; px += 6) {
+      const wy = y + Math.sin((px + x) * 0.05 + time0 * 3) * 3;
+      if (px === 0) ctx.moveTo(x + px, wy); else ctx.lineTo(x + px, wy);
+    }
+    ctx.stroke();
+    // twinkling sparkles
+    for (let i = 0; i < 6; i++) {
+      const gx = x + hash(z.colA * 7 + i) * w;
+      const gy = y + 8 + hash(z.colA * 3 + i) * (VIEW_H - y) * 0.7;
+      ctx.globalAlpha = 0.25 + 0.55 * Math.abs(Math.sin(time0 * 4 + i));
+      ctx.fillStyle = '#ffffff';
+      ellipse(ctx, gx, gy, 2, 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// The see-through ice cube Fin gets trapped in when he falls in the water.
+function drawIceCube(ctx) {
+  const sx = player.x - cam.x - 4, sy = player.y - cam.y - 4;
+  const w = player.w + 8, h = player.h + 8;
+  ctx.save();
+  ctx.fillStyle = 'rgba(205,238,255,0.55)';
+  roundRect(ctx, sx, sy, w, h, 6); ctx.fill();
+  ctx.strokeStyle = '#eaf8ff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx + 4, sy + h - 6); ctx.lineTo(sx + w * 0.5, sy + 4); ctx.stroke();
+  if (player.frozen < 0.45) {
+    ctx.strokeStyle = 'rgba(127,184,216,0.95)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(sx + w * 0.4, sy + 2); ctx.lineTo(sx + w * 0.5, sy + h * 0.5); ctx.lineTo(sx + w * 0.3, sy + h - 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx + w * 0.72, sy + 2); ctx.lineTo(sx + w * 0.6, sy + h * 0.6); ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -572,6 +1018,7 @@ function drawSign(ctx, x, baseY, text) {
 /* ---------------- Ground / platform / brick tiles ---------------- */
 function drawTile(ctx, ch, sx, sy, hasSolidAbove, col, row) {
   if (ch === '#') {
+    if (theme.ground === 'snow') { drawSnowGroundTile(ctx, sx, sy, hasSolidAbove, col, row); return; }
     // dirt block — a solid earthy brown with natural little patches
     ctx.fillStyle = COL.dirt;
     ctx.fillRect(sx, sy, TILE, TILE);
@@ -593,6 +1040,7 @@ function drawTile(ctx, ch, sx, sy, hasSolidAbove, col, row) {
       roundRect(ctx, sx - 1, sy - 4, TILE + 2, 5, 3); ctx.fill();
     }
   } else if (ch === '=') {
+    if (theme.platform === 'ice') { drawIceBlockTile(ctx, sx, sy, true); return; }
     // wooden log platform
     ctx.fillStyle = COL.woodDark;
     roundRect(ctx, sx, sy + 6, TILE, TILE - 10, 8); ctx.fill();
@@ -605,7 +1053,8 @@ function drawTile(ctx, ch, sx, sy, hasSolidAbove, col, row) {
     ctx.fillStyle = COL.grassLight;
     ellipse(ctx, sx + TILE * 0.3, sy + 4, 5, 3);
     ellipse(ctx, sx + TILE * 0.7, sy + 4, 5, 3);
-  } else if (ch === 'B') {
+  } else if (ch === 'B' || ch === 'I') {
+    if (theme.brick === 'iceblock') { drawIceBlockTile(ctx, sx, sy, ch === 'I' || !hasSolidAbove); return; }
     // brick block
     ctx.fillStyle = COL.brickDark;
     ctx.fillRect(sx, sy, TILE, TILE);
@@ -672,10 +1121,15 @@ class LevelBuilder {
   enemy(type, col, row) { this.spawnList.push({ type: type, col: col, row: row }); return this; }
   checkpoint(col) { this.checkpointList.push(col); return this; }
   goal(col) { this.goalCol = col; return this; }
+  // Turn the top row of ground into slick ice ('I' = solid + slippery + ice look).
+  iceFloor(colA, colB) {
+    for (let c = colA; c <= colB; c++) if (this.grid[12][c] === '#') this.grid[12][c] = 'I';
+    return this;
+  }
   isSolid(col, row) {
     if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return false;
     const ch = this.grid[row][col];
-    return ch === '#' || ch === '=' || ch === 'B';
+    return ch === '#' || ch === '=' || ch === 'B' || ch === 'I';
   }
 }
 
@@ -729,6 +1183,56 @@ function buildLevel1() {
   return L;
 }
 
+// Build Level 2 — "Ice Ice Antarctica". Same proven-safe jump geometry as
+// Level 1, but with icy water gaps, turnips, and the Puffy Penguin boss.
+function buildLevel2() {
+  const L = new LevelBuilder(LEVEL_COLS, LEVEL_ROWS);
+
+  // ── S1 SUNNY SNOW MEADOW (0–35): flat, learn the ice ──
+  L.ground(0, 35);            L.coins(10, 10, 4);
+  L.enemy('black', 18, 11);   L.enemy('black', 28, 11);
+  L.deco('sign', 2); L.deco('snowman', 6);  L.deco('pine', 14);
+  L.deco('snowman', 24);      L.deco('pine', 30);
+
+  // ── S2 FIRST WATER GAPS (36–71): water at 44–46 and 58–60 ──
+  L.ground(36, 43); L.ground(47, 57); L.ground(61, 71);
+  L.platform(48, 10, 4); L.coins(48, 9, 4); L.coins(44, 9, 3);
+  L.checkpoint(37);      L.enemy('black', 63, 11); L.coins(66, 11, 3);
+  L.deco('pine', 40); L.deco('snowman', 50); L.deco('snowman', 68);
+
+  // ── S3 TURNIP PLAYGROUND (72–107): water at 79–86 and 96–103 — RED TURNIP DEBUT ──
+  L.ground(72, 78); L.ground(87, 95); L.ground(104, 107);
+  L.platform(80, 10, 3); L.platform(84, 9, 3); L.platform(97, 10, 3); L.platform(101, 9, 3);
+  L.coins(80, 9, 3); L.coins(84, 8, 3); L.coins(97, 9, 3); L.coins(101, 8, 3);
+  L.checkpoint(72);
+  L.enemy('black', 74, 11); L.enemy('red', 89, 11);
+  L.deco('snowman', 73); L.deco('snowman', 94);
+
+  // ── S4 SNOWFALL HOLLOW (108–143): long water at 113–130, crossed on floating ice floes ──
+  L.ground(108, 112); L.ground(131, 143);
+  L.platform(114, 10, 3); L.platform(118, 8, 3); L.platform(122, 10, 3); L.platform(126, 9, 3);
+  L.coins(114, 9, 3); L.coins(118, 7, 3); L.coins(126, 8, 3);
+  L.enemy('black', 118, 7);    // a turnip waddling back and forth ON the middle floe!
+  L.enemy('red', 138, 11);     // angry red one patrolling the far shore
+  L.checkpoint(108); L.checkpoint(132);
+  L.deco('pine', 110); L.deco('pine', 134); L.deco('snowman', 140);
+
+  // ── S5 SNOWMAN VILLAGE (144–179): snowmen field + ice-block stairs up a hill ──
+  L.ground(144, 179);   L.ground(166, 172, 9);            // raised plateau (hill) cols 166–172
+  L.brick(160, 11, 2);  L.brick(162, 10, 2);  L.brick(164, 9, 2);   // ice-block stairs
+  L.coins(167, 8, 5);
+  L.enemy('black', 148, 11); L.enemy('red', 158, 11); L.enemy('red', 168, 8);
+  L.deco('snowman', 146); L.deco('snowman', 149); L.deco('snowman', 152); L.deco('snowman', 155);
+  L.deco('pine', 145);    L.deco('pine', 174);    L.deco('signBoss', 177);
+
+  // ── S6 PUFFY PENGUIN'S ICE ARENA (180–215): flat slick-ice battleground ──
+  L.ground(180, 215);   L.iceFloor(180, 215);
+  L.enemy('penguin', 205, 11); L.goal(210);
+  L.checkpoint(181); L.deco('pine', 182); L.deco('pine', 213);
+
+  return L;
+}
+
 // Turn the builder data into simple lists the game can use.
 let LEVEL = null;
 function parseLevel(L) {
@@ -741,6 +1245,18 @@ function parseLevel(L) {
     checkpoints: L.checkpointList,
     goalX: L.goalCol * TILE + TILE / 2
   };
+  // Find the gaps (columns with no ground in the bottom rows) — winter levels
+  // fill these with icy water.
+  waterZones = [];
+  let start = -1;
+  for (let c = 0; c <= LEVEL_COLS; c++) {
+    const isGap = c < LEVEL_COLS && !L.isSolid(c, 12) && !L.isSolid(c, 13) && !L.isSolid(c, 14);
+    if (isGap && start < 0) start = c;
+    if (!isGap && start >= 0) {
+      waterZones.push({ colA: start, colB: c - 1, x: start * TILE, w: (c - start) * TILE, surfaceY: 12 * TILE - 8 });
+      start = -1;
+    }
+  }
 }
 
 /* ================================================================
@@ -797,9 +1313,44 @@ const BOOMER_ANIMS = {
 // Give the AssetLoader a chance to find any sprite-sheet frames (none yet).
 [FIN_ANIMS, PUPPY_ANIMS, BEE_ANIMS, BOOMER_ANIMS].forEach(AssetLoader.collect.bind(AssetLoader));
 
+// ---- Winter enemy animations ----
+function turnipFrames(kind, walk) { return procFrame((c, e) => drawTurnip(c, e.w, e.h, { kind: kind, walk: walk, angry: kind === 'red' })); }
+const TURNIP_ANIMS = {
+  idle: { fps: 4, loop: true, frames: [turnipFrames('black', 0)] },
+  run: { fps: 6, loop: true, frames: [0, 1, 2, 3].map(i => turnipFrames('black', i)) },
+  jump: { fps: 6, loop: false, frames: [turnipFrames('black', 0)] },
+  fall: { fps: 6, loop: false, frames: [turnipFrames('black', 2)] }
+};
+const TURNIP_ANIMS_RED = {
+  idle: { fps: 5, loop: true, frames: [turnipFrames('red', 0)] },
+  run: { fps: 10, loop: true, frames: [0, 1, 2, 3].map(i => turnipFrames('red', i)) },
+  jump: { fps: 6, loop: false, frames: [turnipFrames('red', 0)] },
+  fall: { fps: 6, loop: false, frames: [turnipFrames('red', 2)] }
+};
+const PUFFY_ANIMS = {
+  idle: { fps: 3, loop: true, frames: [
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: e.mode === 'slide', bob: 0, flash: e.hurtFlash })),
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: e.mode === 'slide', bob: 1, flash: e.hurtFlash }))
+  ]},
+  run: { fps: 8, loop: true, frames: [
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: true, flash: e.hurtFlash })),
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: true, bob: 1, flash: e.hurtFlash }))
+  ]},
+  jump: { fps: 6, loop: false, frames: [procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: false, flash: e.hurtFlash }))] },
+  fall: { fps: 6, loop: false, frames: [procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: false, flash: e.hurtFlash }))] }
+};
+[PUFFY_ANIMS, TURNIP_ANIMS, TURNIP_ANIMS_RED].forEach(AssetLoader.collect.bind(AssetLoader));
+
 /* ---- Helper: is a point inside a solid tile? ---- */
 function solidAtPx(px, py) {
   return LEVEL.isSolid(Math.floor(px / TILE), Math.floor(py / TILE));
+}
+
+/* ---- Helper: what kind of tile is at this point? ('.' = empty) ---- */
+function tileCharAtPx(px, py) {
+  const c = Math.floor(px / TILE), r = Math.floor(py / TILE);
+  if (c < 0 || c >= LEVEL_COLS || r < 0 || r >= LEVEL_ROWS) return '.';
+  return LEVEL.grid[r][c];
 }
 
 /* ---- Physics + collision: move an entity and stop it at walls/floors ---- */
@@ -857,8 +1408,26 @@ class Player {
     this.invuln = 0; this.squash = { x: 1, y: 1 }; this.squashTimer = 0;
     this.hearts = 3; this.coins = 0;
     this.jumpCut = false;   // makes sure we only "cut" a jump once
+    this.frozen = 0;        // >0 while Fin is trapped in an ice cube
+    this.slippery = false;  // true when standing on ice
   }
   update(dt) {
+    // ---- trapped in ice? sink slowly, then shatter ----
+    if (this.frozen > 0) {
+      this.frozen -= dt;
+      this.vy = 40;
+      this.y += this.vy * dt;
+      setAnim(this, 'idle');
+      advanceAnim(this, dt);
+      if (this.frozen <= 0) {
+        this.frozen = 0;
+        SFX.crack();
+        spawnBurst(this.x + this.w / 2, this.y + this.h / 2, '#dff4ff', 16, 'sparkle');
+        respawnAfterDeath();
+      }
+      return;
+    }
+
     const left = anyDown(KEY_LEFT), right = anyDown(KEY_RIGHT);
     const jumpDown = anyDown(KEY_JUMP), jumpHit = anyPressed(KEY_JUMP);
 
@@ -871,12 +1440,17 @@ class Player {
     else this.coyote = Math.max(0, this.coyote - dt);
 
     // ---- left / right movement with acceleration & friction ----
-    const accel = this.onGround ? PHYS.ACCEL_GROUND : PHYS.ACCEL_AIR;
+    // On icy tiles Fin skates a little: less grip, slower to speed up/stop.
+    this.slippery = !!(theme && theme.slipperyTiles &&
+      theme.slipperyTiles.includes(tileCharAtPx(this.x + this.w / 2, this.y + this.h + 2)));
+    const slipA = this.slippery ? 0.8 : 1;
+    const slipF = this.slippery ? 0.5 : 1;
+    const accel = (this.onGround ? PHYS.ACCEL_GROUND : PHYS.ACCEL_AIR) * slipA;
     if (left && !right) { this.vx -= accel * dt; this.facing = -1; }
     else if (right && !left) { this.vx += accel * dt; this.facing = 1; }
     else {
       // no key held: slow down (friction)
-      const fr = (this.onGround ? PHYS.FRICTION_GROUND : PHYS.FRICTION_AIR) * dt;
+      const fr = (this.onGround ? PHYS.FRICTION_GROUND : PHYS.FRICTION_AIR) * slipF * dt;
       if (Math.abs(this.vx) <= fr) this.vx = 0;
       else this.vx -= sign(this.vx) * fr;
     }
@@ -916,10 +1490,14 @@ class Player {
     } else { this.squash.x = 1; this.squash.y = 1; }
 
     if (this.invuln > 0) this.invuln -= dt;
-    this.wasJumpHeld = jumpDown;
 
     // ---- fell into a pit? ----
-    if (this.y > WORLD_H + 120) fallInPit();
+    if (this.y > WORLD_H + 120) { fallInPit(); return; }
+    // ---- splashed into icy water? freeze into a cube! ----
+    if (theme && theme.water && this.y + this.h > 426) {
+      const col = Math.floor((this.x + this.w / 2) / TILE);
+      if (waterZones.some(z => col >= z.colA && col <= z.colB)) freezeInWater();
+    }
   }
 }
 
@@ -935,13 +1513,12 @@ class Puppy {
   update(dt) {
     if (this.dead) { this.squish -= dt; return; }
     this.vy = Math.min(this.vy + PHYS.GRAVITY * dt, PHYS.MAX_FALL);
-    // turn around at walls or before falling off a ledge
+    // turn around at walls, or before falling off a ledge (only check ledges on the ground!)
     const aheadX = this.vx > 0 ? this.x + this.w + 3 : this.x - 3;
     const bodyY = this.y + this.h * 0.5;
-    const footY = this.y + this.h + 4;
-    if (solidAtPx(aheadX, bodyY) || !solidAtPx(aheadX, footY)) {
-      this.vx = -this.vx;
-    }
+    const wall = solidAtPx(aheadX, bodyY);
+    const ledge = this.onGround && !solidAtPx(aheadX, this.y + this.h + 4);
+    if (wall || ledge) this.vx = -this.vx;
     this.facing = sign(this.vx) || this.facing;
     moveAndCollide(this, dt);
     // a cute little hop now and then
@@ -979,7 +1556,7 @@ class Boomer {
     this.x = x; this.y = y; this.w = 120; this.h = 90;
     this.vx = 0; this.vy = 0; this.onGround = false;
     this.facing = -1; this.state = 'idle'; this.animTime = 0; this.anims = BOOMER_ANIMS;
-    this.hp = 3; this.maxHp = 3; this.alive = true;
+    this.hp = 3; this.maxHp = 3; this.alive = true; this.name = 'BOOMER';
     this.invuln = 0; this.hopTimer = 1.2; this.mode = 'idle';
     this.glideTimer = 0; this.glideToggle = false; this.wasAir = false;
     this.windupTimer = 0; this.glideDir = 1;
@@ -1078,6 +1655,149 @@ class Boomer {
   }
 }
 
+/* ---------------- ENEMY: Turnip (Black = slow, Red = angry + fast) ---------------- */
+const TURNIP_KINDS = {
+  black: { speed: 55,  hopEvery: [1.6, 3.2], hopVy: -300 },
+  red:   { speed: 100, hopEvery: [1.0, 1.8], hopVy: -360 }
+};
+class Turnip {
+  constructor(x, y, kind) {
+    const K = TURNIP_KINDS[kind] || TURNIP_KINDS.black;
+    this.kind = kind || 'black';
+    this.speed = K.speed; this.hopEvery = K.hopEvery; this.hopVy = K.hopVy;
+    this.x = x; this.y = y; this.w = 30; this.h = 26;
+    this.vx = -this.speed; this.vy = 0; this.onGround = false;
+    this.facing = -1; this.state = 'run'; this.animTime = 0;
+    this.anims = (this.kind === 'red') ? TURNIP_ANIMS_RED : TURNIP_ANIMS;
+    this.dead = false; this.squish = 0;
+    this.hopTimer = rand(this.hopEvery[0], this.hopEvery[1]);
+    this.squash = { x: 1, y: 1 };
+  }
+  update(dt) {
+    if (this.dead) { this.squish -= dt; return; }
+    this.vy = Math.min(this.vy + PHYS.GRAVITY * dt, PHYS.MAX_FALL);
+    // turn around at walls, or before falling off a ledge (only check ledges on the ground!)
+    const aheadX = this.vx > 0 ? this.x + this.w + 3 : this.x - 3;
+    const bodyY = this.y + this.h * 0.5;
+    const wall = solidAtPx(aheadX, bodyY);
+    const ledge = this.onGround && !solidAtPx(aheadX, this.y + this.h + 4);
+    if (wall || ledge) this.vx = -this.vx;
+    this.facing = sign(this.vx) || this.facing;
+    moveAndCollide(this, dt);
+    // a bouncy little hop now and then
+    this.hopTimer -= dt;
+    if (this.hopTimer <= 0 && this.onGround) { this.vy = this.hopVy; this.hopTimer = rand(this.hopEvery[0], this.hopEvery[1]); }
+    advanceAnim(this, dt);
+  }
+}
+
+/* ---------------- BOSS: Puffy Penguin (Level 2) ---------------- */
+class PuffyPenguin {
+  constructor(x, y) {
+    this.x = x; this.y = y; this.w = 132; this.h = 105;
+    this.vx = 0; this.vy = 0; this.onGround = false;
+    this.facing = -1; this.state = 'idle'; this.animTime = 0; this.anims = PUFFY_ANIMS;
+    this.hp = 3; this.maxHp = 3; this.alive = true; this.name = 'PUFFY PENGUIN';
+    this.invuln = 0; this.hopTimer = 1.2; this.mode = 'idle';
+    this.slideTimer = 0; this.slideDir = 1; this.attackCount = 0;
+    this.squash = { x: 1, y: 1 }; this.angry = false; this.defeatTimer = 0;
+    this.hurtFlash = 0; this.floorY = y + 105;
+    this.dead = false; this.squish = 0;
+  }
+  get phase() { return this.hp; }
+  update(dt) {
+    if (!this.alive) {
+      // deflate like a popped balloon, then vanish
+      this.defeatTimer += dt;
+      this.squish = Math.max(0, this.squish - dt);
+      this.squash = { x: 1 + (1.2 - this.squish) * 0.35, y: Math.max(0.06, this.squish / 1.2) };
+      return;
+    }
+    if (this.invuln > 0) { this.invuln -= dt; this.hurtFlash = Math.max(0, this.invuln); }
+    else this.hurtFlash = 0;
+
+    // Dozing at his end of the arena until Fin steps in.
+    if (!bossActive) {
+      setAnim(this, 'idle');
+      this.squash = { x: 1, y: 1 + Math.sin(time0 * 2) * 0.02 };
+      advanceAnim(this, dt);
+      return;
+    }
+
+    const speed = 90 + (3 - this.phase) * 50;         // faster as he loses health
+    const interval = 1.7 - (3 - this.phase) * 0.3;    // rests a moment between hops (a stomp window)
+
+    if (this.mode === 'idle') {
+      setAnim(this, 'idle');
+      this.hopTimer -= dt;
+      if (this.hopTimer <= 0) {
+        const dir = sign((player.x + player.w / 2) - (this.x + this.w / 2)) || -1;
+        this.facing = dir;
+        this.attackCount++;
+        const doSlide = this.phase <= 2 && (this.phase === 1 ? (this.attackCount % 2 === 0) : (this.attackCount % 3 === 0));
+        if (doSlide) {
+          // crouch + wobble first (a fair warning), then belly-slide
+          this.mode = 'windup'; this.slideTimer = 0.5; this.vx = 0; this.vy = 0; this.slideDir = dir;
+          this.squash = { x: 1.2, y: 0.8 };
+          setAnim(this, 'idle');
+        } else {
+          this.mode = 'hop'; this.vx = dir * speed; this.vy = -650;
+          setAnim(this, 'jump');
+        }
+      }
+    } else if (this.mode === 'hop') {
+      this.vy = Math.min(this.vy + PHYS.GRAVITY * dt, PHYS.MAX_FALL);
+      const wasAir = !this.onGround;
+      const landed = moveAndCollide(this, dt);
+      if (this.onGround && wasAir) {
+        const floorY = this.y + this.h;
+        spawnShockwave(this.x + this.w * 0.5, -1, 220, floorY);
+        if (this.phase <= 2) spawnShockwave(this.x + this.w * 0.5, 1, 220, floorY);
+        this.squash = { x: 1.22, y: 0.78 };
+        this.mode = 'idle'; this.hopTimer = interval; this.vx = 0;
+        setAnim(this, 'idle');
+      }
+    } else if (this.mode === 'windup') {
+      this.slideTimer -= dt;
+      this.squash = { x: 1.2, y: 0.8 };
+      if (this.slideTimer <= 0) {
+        // go! squash down low so Fin can jump over him
+        this.floorY = this.y + this.h;
+        this.h = 76; this.y = this.floorY - this.h;
+        this.mode = 'slide'; this.slideTimer = 0.85;
+        this.vx = this.slideDir * 320; this.vy = 0;
+        SFX.slide();
+        setAnim(this, 'run');
+      }
+    } else if (this.mode === 'slide') {
+      this.slideTimer -= dt;
+      this.x += this.vx * dt;
+      this.x = clamp(this.x, cam.x + 24, 214 * TILE - this.w);
+      if (this.slideTimer <= 0) {
+        // stand back up
+        this.y = this.floorY - 105; this.h = 105;
+        this.mode = 'idle'; this.hopTimer = 1.0; this.vx = 0;
+      }
+    }
+
+    this.squash.x = lerp(this.squash.x, 1, 8 * dt);
+    this.squash.y = lerp(this.squash.y, 1, 8 * dt);
+    advanceAnim(this, dt);
+  }
+  takeHit() {
+    if (this.invuln > 0 || !this.alive) return;
+    this.hp--;
+    this.invuln = 1.2;
+    this.angry = true;
+    if (this.hp <= 0) {
+      this.alive = false;
+      this.defeatTimer = 0;
+      this.dead = true; this.squish = 1.2;
+    }
+    SFX.bossHit();
+  }
+}
+
 /* ---------------- Collectible: Coin ---------------- */
 class Coin {
   constructor(x, y) { this.x = x; this.y = y; this.w = 20; this.h = 20; this.taken = false; this.spin = rand(0, 6); }
@@ -1098,8 +1818,8 @@ function spawnBurst(x, y, color, count, kind) {
   }
 }
 
-function spawnConfetti(x, y, count) {
-  const colors = ['#e8792b', '#d94f2b', '#f2b134', '#5fbf4a', '#3f78d8', '#e8203a'];
+function spawnConfetti(x, y, count, palette) {
+  const colors = palette || ['#e8792b', '#d94f2b', '#f2b134', '#5fbf4a', '#3f78d8', '#e8203a'];
   for (let i = 0; i < count; i++) {
     particles.push({
       x: x, y: y, vx: rand(-260, 260), vy: rand(-420, -120),
@@ -1145,21 +1865,31 @@ function drawParticles(ctx) {
   }
 }
 
-// Ambient falling leaves that drift across the world.
+// Ambient weather: falling leaves in fall, drifting snowflakes in winter.
 const leaves = [];
 function updateLeaves(dt) {
-  if (leaves.length < 26 && Math.random() < 0.5) {
-    leaves.push({
-      x: cam.x + rand(-100, VIEW_W + 100), y: -20,
-      vx: rand(-20, 40), vy: rand(30, 70), sway: rand(0, 6), swaySpeed: rand(1, 2.5),
-      size: rand(6, 11), rot: rand(0, 6), vr: rand(-3, 3),
-      color: ['#e8792b', '#d94f2b', '#f2b134', '#c98a3d'][Math.floor(rand(0, 4))]
-    });
+  const winter = theme && theme.ambient === 'flake';
+  const cap = winter ? 44 : 26;
+  if (leaves.length < cap && Math.random() < 0.6) {
+    if (winter) {
+      leaves.push({
+        x: cam.x + rand(-100, VIEW_W + 100), y: -20,
+        vx: rand(-15, 25), vy: rand(20, 55), sway: rand(0, 6), swaySpeed: rand(0.8, 2),
+        size: rand(1.6, 3.4), rot: rand(0, 6), vr: rand(-2, 2), color: '#ffffff', flake: true
+      });
+    } else {
+      leaves.push({
+        x: cam.x + rand(-100, VIEW_W + 100), y: -20,
+        vx: rand(-20, 40), vy: rand(30, 70), sway: rand(0, 6), swaySpeed: rand(1, 2.5),
+        size: rand(6, 11), rot: rand(0, 6), vr: rand(-3, 3),
+        color: ['#e8792b', '#d94f2b', '#f2b134', '#c98a3d'][Math.floor(rand(0, 4))]
+      });
+    }
   }
   for (let i = leaves.length - 1; i >= 0; i--) {
     const l = leaves[i];
     l.sway += dt * l.swaySpeed;
-    l.x += (l.vx + Math.sin(l.sway) * 30) * dt;
+    l.x += (l.vx + Math.sin(l.sway) * (l.flake ? 18 : 30)) * dt;
     l.y += l.vy * dt;
     l.rot += l.vr * dt;
     if (l.y > WORLD_H + 40) leaves.splice(i, 1);
@@ -1167,15 +1897,33 @@ function updateLeaves(dt) {
 }
 function drawLeaves(ctx) {
   for (const l of leaves) {
+    const sx = l.x - cam.x, sy = l.y - cam.y;
     ctx.save();
-    ctx.translate(l.x - cam.x, l.y - cam.y);
-    ctx.rotate(l.rot);
-    ctx.fillStyle = l.color;
-    ctx.beginPath();
-    ctx.moveTo(0, -l.size * 0.6);
-    ctx.quadraticCurveTo(l.size * 0.6, 0, 0, l.size * 0.6);
-    ctx.quadraticCurveTo(-l.size * 0.6, 0, 0, -l.size * 0.6);
-    ctx.fill();
+    if (l.flake) {
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#ffffff';
+      if (l.size > 2.6) {
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+        for (let k = 0; k < 3; k++) {
+          const a = k * Math.PI / 3 + l.rot;
+          ctx.beginPath();
+          ctx.moveTo(sx - Math.cos(a) * l.size, sy - Math.sin(a) * l.size);
+          ctx.lineTo(sx + Math.cos(a) * l.size, sy + Math.sin(a) * l.size);
+          ctx.stroke();
+        }
+      } else {
+        ellipse(ctx, sx, sy, l.size, l.size);
+      }
+    } else {
+      ctx.translate(sx, sy);
+      ctx.rotate(l.rot);
+      ctx.fillStyle = l.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -l.size * 0.6);
+      ctx.quadraticCurveTo(l.size * 0.6, 0, 0, l.size * 0.6);
+      ctx.quadraticCurveTo(-l.size * 0.6, 0, 0, -l.size * 0.6);
+      ctx.fill();
+    }
     ctx.restore();
   }
 }
@@ -1199,13 +1947,14 @@ function updateShockwaves(dt) {
   }
 }
 function drawShockwaves(ctx) {
+  const snow = theme && theme.ambient === 'flake';
   for (const s of shockwaves) {
     const sx = s.x - cam.x, sy = s.y - cam.y;
     ctx.save();
     ctx.globalAlpha = clamp(s.life / 1.6, 0, 1) * 0.9;
-    ctx.fillStyle = '#c9a86a';
+    ctx.fillStyle = snow ? '#e8f6ff' : '#c9a86a';
     ellipse(ctx, sx + s.w / 2, sy + s.h, s.w * 0.7, s.h * 0.9);
-    ctx.fillStyle = '#efe0c0';
+    ctx.fillStyle = snow ? '#ffffff' : '#efe0c0';
     ellipse(ctx, sx + s.w / 2, sy + s.h, s.w * 0.4, s.h * 0.5);
     ctx.restore();
   }
@@ -1221,7 +1970,7 @@ let coins = [];
 let checkpoints = [];
 let goal = { x: 0, active: false };
 let cam = { x: 0, y: 0 };
-let state = 'title';           // title | playing | win | gameover
+let state = 'menu';            // menu | playing | win | gameover
 let bossActive = false;
 let boss = null;
 let respawn = { x: 72, y: 398 };
@@ -1231,9 +1980,9 @@ let winTimer = 0;
 let gameOverTimer = 0;
 let time0 = 0;                 // clock used for animations
 
-// Set up (or reset) everything for a fresh run of Level 1.
+// Set up (or reset) everything for a fresh run of the CURRENT level.
 function resetGame() {
-  parseLevel(buildLevel1());
+  parseLevel(LEVELS[currentLevel].build());
 
   player = new Player(72, 12 * TILE - 34);
   player.hearts = 3; player.coins = 0;
@@ -1244,10 +1993,10 @@ function resetGame() {
     const feetY = (s.row + 1) * TILE;
     if (s.type === 'puppy') enemies.push(new Puppy(s.col * TILE, feetY - 26));
     else if (s.type === 'bee') enemies.push(new Bee(s.col * TILE, feetY - 22));
-    else if (s.type === 'boomer') {
-      boss = new Boomer(s.col * TILE, feetY - 90);
-      enemies.push(boss);
-    }
+    else if (s.type === 'black') enemies.push(new Turnip(s.col * TILE, feetY - 26, 'black'));
+    else if (s.type === 'red') enemies.push(new Turnip(s.col * TILE, feetY - 26, 'red'));
+    else if (s.type === 'boomer') { boss = new Boomer(s.col * TILE, feetY - 90); enemies.push(boss); }
+    else if (s.type === 'penguin') { boss = new PuffyPenguin(s.col * TILE, feetY - 105); enemies.push(boss); }
   }
 
   coins = LEVEL.coins.map(c => new Coin(c.x - 10, c.y - 10));
@@ -1259,6 +2008,16 @@ function resetGame() {
   respawn = { x: 72, y: 12 * TILE - 34 };
   levelTime = 0; bannerTimer = 3.0; winTimer = 0; gameOverTimer = 0;
   particles.length = 0; leaves.length = 0; shockwaves.length = 0;
+}
+
+// Start (or restart) a level at the chosen difficulty — hearts always refill.
+function startLevel(index) {
+  currentLevel = index;
+  theme = THEMES[LEVELS[index].theme];
+  resetGame();
+  player.hearts = DIFFICULTIES[menu.difficulty].hearts;
+  bannerTimer = 3.0;
+  state = 'playing';
 }
 
 /* ================================================================
@@ -1287,7 +2046,7 @@ function updateCamera(dt) {
 
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-  g.addColorStop(0, COL.skyTop); g.addColorStop(0.7, '#9fd8f5'); g.addColorStop(1, COL.skyBot);
+  g.addColorStop(0, theme.skyTop); g.addColorStop(0.7, theme.skyMid); g.addColorStop(1, theme.skyBot);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   // warm sun with a soft glow
@@ -1350,8 +2109,9 @@ function drawTreeLine() {
     const wx = i * spacing + hash(i) * 70;
     const sx = wx - off;
     if (sx < -220 || sx > VIEW_W + 220) continue;
-    // BIG trees rooted at the grass horizon — their fall colors tower over the ground
-    drawFallTree(ctx, sx, 438, 1.8 + hash(i * 3) * 0.6, i);
+    // BIG trees rooted at the horizon — fall colors, or snowy pines in winter
+    if (theme.trees === 'pine') drawSnowyPine(ctx, sx, 438, 1.8 + hash(i * 3) * 0.6, i);
+    else drawFallTree(ctx, sx, 438, 1.8 + hash(i * 3) * 0.6, i);
   }
 }
 
@@ -1359,27 +2119,41 @@ function drawForeground() {
   const factor = 1.3, spacing = 120;
   const off = cam.x * factor;
   const start = Math.floor(off / spacing) - 1;
+  const winter = theme.ambient === 'flake';
   ctx.save();
   ctx.globalAlpha = 0.9;
   for (let i = start; i < start + Math.ceil(VIEW_W / spacing) + 3; i++) {
     const sx = i * spacing + hash(i * 11) * 50 - off;
     if (sx < -80 || sx > VIEW_W + 80) continue;
-    // tall dark grass tufts passing in FRONT of everything
-    ctx.fillStyle = '#2f6d34';
-    for (let b = 0; b < 5; b++) {
-      const bx = sx + b * 7 - 14;
-      const bh = 22 + hash(i * 13 + b) * 26;
+    if (winter) {
+      // fluffy white snow drifts passing in FRONT of everything
+      const dh = 16 + hash(i * 13) * 22;
+      ctx.fillStyle = 'rgba(244,250,255,0.95)';
       ctx.beginPath();
-      ctx.moveTo(bx, VIEW_H);
-      ctx.quadraticCurveTo(bx + 3, VIEW_H - bh, bx + 9, VIEW_H - bh - 4);
-      ctx.quadraticCurveTo(bx + 5, VIEW_H - bh * 0.4, bx + 6, VIEW_H);
+      ctx.moveTo(sx - 30, VIEW_H);
+      ctx.quadraticCurveTo(sx - 10, VIEW_H - dh, sx + 6, VIEW_H - dh * 0.7);
+      ctx.quadraticCurveTo(sx + 24, VIEW_H - dh * 1.1, sx + 42, VIEW_H);
       ctx.closePath(); ctx.fill();
-    }
-    // occasional big leaf silhouette
-    if (hash(i * 17) > 0.7) {
-      ctx.fillStyle = 'rgba(180,80,30,0.55)';
-      ctx.save(); ctx.translate(sx + 40, VIEW_H - 60); ctx.rotate(hash(i) * 3);
-      ellipse(ctx, 0, 0, 26, 14); ctx.restore();
+      ctx.fillStyle = 'rgba(210,235,250,0.9)';
+      ellipse(ctx, sx + 6, VIEW_H - dh * 0.4, 10, 4);
+    } else {
+      // tall dark grass tufts passing in FRONT of everything
+      ctx.fillStyle = '#2f6d34';
+      for (let b = 0; b < 5; b++) {
+        const bx = sx + b * 7 - 14;
+        const bh = 22 + hash(i * 13 + b) * 26;
+        ctx.beginPath();
+        ctx.moveTo(bx, VIEW_H);
+        ctx.quadraticCurveTo(bx + 3, VIEW_H - bh, bx + 9, VIEW_H - bh - 4);
+        ctx.quadraticCurveTo(bx + 5, VIEW_H - bh * 0.4, bx + 6, VIEW_H);
+        ctx.closePath(); ctx.fill();
+      }
+      // occasional big leaf silhouette
+      if (hash(i * 17) > 0.7) {
+        ctx.fillStyle = 'rgba(180,80,30,0.55)';
+        ctx.save(); ctx.translate(sx + 40, VIEW_H - 60); ctx.rotate(hash(i) * 3);
+        ellipse(ctx, 0, 0, 26, 14); ctx.restore();
+      }
     }
   }
   ctx.restore();
@@ -1443,20 +2217,26 @@ function drawGameplay() {
     }
   }
 
+  // ---- icy water filling the gaps (winter levels) ----
+  if (theme.water) drawWater(ctx);
+
   // ---- decorations (behind the characters) ----
   for (const d of LEVEL.decos) {
     const sx = d.x - cam.x;
     if (sx < -140 || sx > VIEW_W + 140) continue;
     if (d.type === 'tree') drawFallTree(ctx, sx, d.baseY - cam.y, 1.0, d.x);
+    else if (d.type === 'pine') drawSnowyPine(ctx, sx, d.baseY - cam.y, 1.0, d.x);
+    else if (d.type === 'snowman') drawSnowman(ctx, sx, d.baseY - cam.y, 1.0, d.x);
     else if (d.type === 'pumpkin') drawPumpkin(ctx, sx, d.baseY - cam.y, 1.0);
     else if (d.type === 'sign') drawSign(ctx, sx, d.baseY - cam.y, 'THIS WAY!');
-    else if (d.type === 'signBoss') drawSign(ctx, sx, d.baseY - cam.y, 'BOSS AHEAD!');
+    else if (d.type === 'signBoss') drawSign(ctx, sx, d.baseY - cam.y, theme.ambient === 'flake' ? 'PENGUIN AHEAD!' : 'BOSS AHEAD!');
   }
 
-  // ---- checkpoints (fall flags) ----
+  // ---- checkpoints (fall flags, or candy canes in winter) ----
   for (const cp of checkpoints) {
     const sx = cp.x - cam.x;
     if (sx < -60 || sx > VIEW_W + 60) continue;
+    if (theme.checkpoint === 'candycane') { drawCandyCane(ctx, sx, cp.y + 34, cp.active); continue; }
     ctx.fillStyle = '#6f4a24';
     ctx.fillRect(sx, cp.y + 4, 4, 30);
     ctx.fillStyle = cp.active ? '#5fbf4a' : '#c0c0c0';
@@ -1470,14 +2250,25 @@ function drawGameplay() {
   // ---- goal flag (only appears after the boss is beaten) ----
   if (goal.active) {
     const sx = goal.x - cam.x;
+    const winter = theme.ambient === 'flake';
     ctx.fillStyle = '#6f4a24';
     ctx.fillRect(sx, 12 * TILE - 110, 5, 110);
-    ctx.fillStyle = '#f2b134';
+    ctx.fillStyle = winter ? '#7fd0f0' : '#f2b134';
     ctx.beginPath();
     ctx.moveTo(sx + 5, 12 * TILE - 110);
     ctx.lineTo(sx + 54, 12 * TILE - 92);
     ctx.lineTo(sx + 5, 12 * TILE - 74);
     ctx.closePath(); ctx.fill();
+    if (winter) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 1.4;
+      for (let k = 0; k < 3; k++) {
+        const a = k * Math.PI / 3;
+        ctx.beginPath();
+        ctx.moveTo(sx + 28 - Math.cos(a) * 9, 12 * TILE - 92 - Math.sin(a) * 9);
+        ctx.lineTo(sx + 28 + Math.cos(a) * 9, 12 * TILE - 92 + Math.sin(a) * 9);
+        ctx.stroke();
+      }
+    }
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 14px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1500,6 +2291,9 @@ function drawGameplay() {
     renderEntity(e);
   }
   renderEntity(player);
+
+  // ---- if Fin is frozen in an ice cube, draw the cube on top ----
+  if (player.frozen > 0) drawIceCube(ctx);
 
   // ---- shockwaves + particles + leaves ----
   drawShockwaves(ctx);
@@ -1543,8 +2337,9 @@ function drawHeart(ctx, x, y, size, filled) {
 }
 
 function drawHUD() {
-  // hearts
-  for (let i = 0; i < 3; i++) drawHeart(ctx, 34 + i * 36, 26, 14, i < player.hearts);
+  // hearts (as many slots as the chosen difficulty)
+  const maxH = DIFFICULTIES[menu.difficulty].hearts;
+  for (let i = 0; i < maxH; i++) drawHeart(ctx, 34 + i * 30, 26, 14, i < player.hearts);
 
   // coin counter
   drawCoin(ctx, VIEW_W - 92, 34, 11, time0 * 4);
@@ -1563,7 +2358,7 @@ function drawHUD() {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('BOOMER', VIEW_W / 2, barY + 9);
+    ctx.fillText(boss.name || 'BOSS', VIEW_W / 2, barY + 9);
     const segW = (barW - 8) / boss.maxHp;
     for (let i = 0; i < boss.maxHp; i++) {
       ctx.fillStyle = i < boss.hp ? '#e8203a' : 'rgba(255,255,255,0.2)';
@@ -1577,11 +2372,11 @@ function drawHUD() {
     ctx.save();
     ctx.globalAlpha = a;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    roundRect(ctx, VIEW_W / 2 - 190, 90, 380, 54, 14); ctx.fill();
+    roundRect(ctx, VIEW_W / 2 - 220, 90, 440, 54, 14); ctx.fill();
     ctx.fillStyle = '#ffe9a8';
-    ctx.font = 'bold 28px system-ui, sans-serif';
+    ctx.font = 'bold 26px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('LEVEL 1 — FALL FIELDS', VIEW_W / 2, 118);
+    ctx.fillText('LEVEL ' + (currentLevel + 1) + ' — ' + LEVELS[currentLevel].name.toUpperCase(), VIEW_W / 2, 118);
     ctx.restore();
   }
 
@@ -1603,32 +2398,79 @@ function bigText(text, y, size, color) {
   ctx.restore();
 }
 
-function drawTitle() {
-  ctx.fillStyle = 'rgba(20,15,10,0.45)';
+// A simple ground band behind the menu (grass or snow, matching the level).
+function drawMenuGround() {
+  if (theme.ground === 'snow') {
+    ctx.fillStyle = '#bfe4f2'; ctx.fillRect(0, 430, VIEW_W, VIEW_H - 430);
+    ctx.fillStyle = '#f4faff'; roundRect(ctx, -2, 424, VIEW_W + 4, 16, 6); ctx.fill();
+    ctx.fillStyle = '#ffffff'; roundRect(ctx, -2, 424, VIEW_W + 4, 7, 5); ctx.fill();
+  } else {
+    ctx.fillStyle = COL.dirt; ctx.fillRect(0, 430, VIEW_W, VIEW_H - 430);
+    ctx.fillStyle = COL.grass; roundRect(ctx, -2, 424, VIEW_W + 4, 16, 6); ctx.fill();
+    ctx.fillStyle = COL.grassLight; roundRect(ctx, -2, 424, VIEW_W + 4, 7, 5); ctx.fill();
+  }
+}
+
+// One selectable row of the menu (a label + a carousel value with arrows).
+function drawMenuPanel(y, rowIndex, label, valueText) {
+  const selected = menu.row === rowIndex;
+  const w = 560, x = VIEW_W / 2 - w / 2, h = 58;
+  ctx.save();
+  ctx.globalAlpha = selected ? 1 : 0.85;
+  ctx.fillStyle = 'rgba(0,0,0,' + (selected ? 0.62 : 0.5) + ')';
+  roundRect(ctx, x, y, w, h, 14); ctx.fill();
+  ctx.strokeStyle = selected ? '#ffe066' : 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = selected ? 3 : 1.5;
+  roundRect(ctx, x, y, w, h, 14); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + 16, y + h / 2);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(valueText, VIEW_W / 2, y + h / 2);
+  const bob = Math.sin(time0 * 5) * 3;
+  ctx.fillStyle = selected ? '#ffe066' : 'rgba(255,255,255,0.5)';
+  ctx.font = 'bold 26px system-ui, sans-serif';
+  ctx.fillText('◀', x + w - 46 - bob, y + h / 2);
+  ctx.fillText('▶', x + w - 20 + bob, y + h / 2);
+  ctx.restore();
+}
+
+function drawMenu() {
+  ctx.fillStyle = 'rgba(20,15,10,0.42)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-  const bounce = Math.sin(time0 * 2.5) * 8;
-  bigText('The Adventures of Fin', 170 + bounce, 56, '#ffe066');
+  const bounce = Math.sin(time0 * 2.5) * 7;
+  bigText('The Adventures of Fin', 96 + bounce, 50, '#ffe066');
 
-  // Fin waving on the grass (drawn big in the middle)
+  // Fin preview (wears his scarf when a winter level is picked)
   ctx.save();
-  ctx.translate(VIEW_W / 2 - 45, 268);
-  ctx.scale(3, 3);
+  ctx.translate(VIEW_W / 2 - 34, 150);
+  ctx.scale(2.2, 2.2);
   drawFin(ctx, 30, 34, { bob: Math.sin(time0 * 3) * 0.8 });
   ctx.restore();
+
+  drawMenuPanel(250, 0, 'LEVEL', LEVELS[menu.level].icon + '  ' + LEVELS[menu.level].name);
+  drawMenuPanel(324, 1, 'DIFFICULTY', DIFFICULTIES[menu.difficulty].name);
+
+  // hearts preview for the chosen difficulty
+  const maxH = DIFFICULTIES[menu.difficulty].hearts;
+  for (let i = 0; i < maxH; i++) drawHeart(ctx, VIEW_W / 2 - maxH * 13 + 13 + i * 26, 398, 11, true);
 
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 22px system-ui, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.globalAlpha = 0.6 + 0.4 * Math.sin(time0 * 4);
-  ctx.fillText('Press SPACE to Start', VIEW_W / 2, 400);
+  ctx.fillText('Press SPACE or ENTER to Start', VIEW_W / 2, 452);
   ctx.globalAlpha = 1;
 
-  ctx.font = '16px system-ui, sans-serif';
+  ctx.font = '15px system-ui, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.fillText('Move:  ← →  or  A D        Jump:  SPACE  /  W  /  ↑', VIEW_W / 2, 448);
+  ctx.fillText('↑ ↓ choose a row   ·   ← → change   ·   Move: ←→/AD   Jump: SPACE/W/↑', VIEW_W / 2, 486);
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText('Stomp the bad guys, beat Boomer, and find the goal flag!', VIEW_W / 2, 478);
+  ctx.fillText('During a level: press ESC to come back here', VIEW_W / 2, 510);
 }
 
 function drawWin() {
@@ -1641,12 +2483,12 @@ function drawWin() {
   ctx.font = 'bold 24px system-ui, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff';
-  ctx.fillText('You saved Fall Fields! 🍁', VIEW_W / 2, 285);
+  ctx.fillText(currentLevel === 1 ? 'You saved Antarctica! 🧊' : 'You saved Fall Fields! 🍁', VIEW_W / 2, 285);
   ctx.font = '20px system-ui, sans-serif';
   ctx.fillText('Time: ' + levelTime.toFixed(1) + 's      Coins: ' + player.coins, VIEW_W / 2, 330);
   ctx.fillStyle = '#ffe066';
   ctx.font = 'bold 22px system-ui, sans-serif';
-  ctx.fillText('Press R to play again', VIEW_W / 2, 400);
+  ctx.fillText('Press R to play again      Press Enter for Menu', VIEW_W / 2, 400);
 }
 
 function drawGameOver() {
@@ -1658,7 +2500,7 @@ function drawGameOver() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('Fin ran out of hearts!', VIEW_W / 2, 300);
   ctx.fillStyle = '#ffe066';
-  ctx.fillText('Press R to try again', VIEW_W / 2, 350);
+  ctx.fillText('Press R to try again      Press Enter for Menu', VIEW_W / 2, 350);
 }
 
 /* ---------------- Losing a heart & respawning ---------------- */
@@ -1678,22 +2520,35 @@ function hurtByEnemy(source) {
   if (player.hearts <= 0) { state = 'gameover'; gameOverTimer = 0; SFX.gameover(); }
 }
 
-function fallInPit() {
+function respawnAfterDeath() {
   if (player.hearts <= 0) return;
   player.hearts = Math.max(0, player.hearts - 1);
   player.invuln = 1.4;
   SFX.hurt();
-  spawnBurst(player.x + player.w / 2, WORLD_H - 80, '#e8203a', 12, 'poof');
+  spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#e8203a', 12, 'poof');
   if (player.hearts <= 0) { state = 'gameover'; gameOverTimer = 0; SFX.gameover(); return; }
   // put Fin back at the last checkpoint (or safely inside the arena during the boss fight)
   if (bossActive) { player.x = cam.x + 80; player.y = 12 * TILE - player.h; }
   else { player.x = respawn.x; player.y = respawn.y; }
   player.vx = 0; player.vy = 0;
+  player.frozen = 0;
   shockwaves.length = 0;
+}
+
+// Fell into a bottomless pit.
+function fallInPit() { respawnAfterDeath(); }
+
+// Splashed into icy water: Fin freezes into a cube, then shatters!
+function freezeInWater() {
+  if (player.frozen > 0) return;
+  player.frozen = 0.9;
+  player.vx = 0; player.vy = 40;
+  SFX.freeze();
 }
 
 /* ---------------- Collisions between Fin and enemies ---------------- */
 function handleEnemyCollisions() {
+  if (player.frozen > 0) return;
   for (const e of enemies) {
     if (e.dead) continue;
     if (!aabb(player, e)) continue;
@@ -1707,10 +2562,10 @@ function handleEnemyCollisions() {
       if (e === boss) {
         if (boss.invuln <= 0 && boss.alive) {
           boss.takeHit();
-          spawnBurst(e.x + e.w / 2, e.y + 20, '#a6c84a', 14, 'poof');
+          spawnBurst(e.x + e.w / 2, e.y + 20, theme.ambient === 'flake' ? '#dff4ff' : '#a6c84a', 14, 'poof');
           if (!boss.alive) {
-            // Boomer is defeated — big party, then the goal flag appears!
-            spawnConfetti(e.x + e.w / 2, e.y + e.h / 2, 60);
+            // boss defeated — big party, then the goal flag appears!
+            spawnConfetti(e.x + e.w / 2, e.y + e.h / 2, 60, theme.ambient === 'flake' ? ['#ffffff', '#dff4ff', '#bfe4f2', '#9fd8f5'] : undefined);
             goal.active = true;
           }
         }
@@ -1728,6 +2583,7 @@ function handleEnemyCollisions() {
 
 /* ---------------- Collect coins, checkpoints, goal ---------------- */
 function handlePickups() {
+  if (player.frozen > 0) return;
   for (const co of coins) {
     if (co.taken) continue;
     if (aabb(player, { x: co.x, y: co.y, w: 20, h: 20 })) {
@@ -1747,7 +2603,7 @@ function handlePickups() {
   }
   if (goal.active && player.x + player.w / 2 >= goal.x) {
     state = 'win'; winTimer = 0; bannerTimer = 0;
-    spawnConfetti(player.x + player.w / 2, player.y, 40);
+    spawnConfetti(player.x + player.w / 2, player.y, 40, theme.ambient === 'flake' ? ['#ffffff', '#dff4ff', '#bfe4f2', '#9fd8f5'] : undefined);
     SFX.win();
   }
 }
@@ -1756,44 +2612,69 @@ function handlePickups() {
 function update(dt) {
   time0 += dt;
 
-  if (state === 'title') {
-    // just animate Fin politely on the title screen
+  if (state === 'menu') {
+    // Fin bobs gently on the menu screen
     setAnim(player, 'idle'); advanceAnim(player, dt);
-    updateParticles(dt);
-    if (anyPressed(KEY_JUMP) || pressed['Enter']) { resetGame(); state = 'playing'; }
-  } else if (state === 'playing') {
-    levelTime += dt;
-    if (bannerTimer > 0) bannerTimer -= dt;
-
-    player.update(dt);
-
-    // start the boss battle once Fin is well inside the arena (so he stays on screen)
-    if (!bossActive && boss && player.x > (WORLD_W - VIEW_W) + 40) {
-      bossActive = true;
-      boss.hopTimer = 1.0;
-      player.invuln = Math.max(player.invuln, 0.6);   // a short grace moment as Boomer wakes up
+    // ↑ ↓ switch rows
+    if (anyPressed(['ArrowUp', 'w', 'W']) || anyPressed(['ArrowDown', 's', 'S'])) {
+      menu.row = (menu.row + 1) % 2; SFX.menuBlip();
     }
-    // keep Fin inside the arena AND on screen during the fight
-    if (bossActive) player.x = clamp(player.x, cam.x + 24, 214 * TILE - player.w);
-
-    for (const e of enemies) e.update(dt);
-    for (const co of coins) co.update(dt);
-
-    handleEnemyCollisions();
-    handlePickups();
-    updateShockwaves(dt);
+    // ← → change the value in the selected row
+    const goLeft = anyPressed(['ArrowLeft', 'a', 'A']);
+    const goRight = anyPressed(['ArrowRight', 'd', 'D']);
+    if (goLeft || goRight) {
+      const dir = goRight ? 1 : -1;
+      if (menu.row === 0) {
+        menu.level = (menu.level + dir + LEVELS.length) % LEVELS.length;
+        theme = THEMES[LEVELS[menu.level].theme];   // live background preview
+      } else {
+        menu.difficulty = (menu.difficulty + dir + DIFFICULTIES.length) % DIFFICULTIES.length;
+      }
+      SFX.menuBlip();
+    }
+    // SPACE / Enter starts the chosen level
+    if (pressed[' '] || pressed['Enter']) { SFX.menuStart(); startLevel(menu.level); }
     updateParticles(dt);
-    updateLeaves(dt);
-    updateCamera(dt);
+  } else if (state === 'playing') {
+    // ESC hops back to the menu
+    if (pressed['Escape']) state = 'menu';
+
+    if (state === 'playing') {
+      levelTime += dt;
+      if (bannerTimer > 0) bannerTimer -= dt;
+
+      player.update(dt);
+
+      // start the boss battle once Fin is well inside the arena (so he stays on screen)
+      if (!bossActive && boss && player.x > (WORLD_W - VIEW_W) + 40) {
+        bossActive = true;
+        boss.hopTimer = 1.0;
+        player.invuln = Math.max(player.invuln, 0.6);   // a short grace moment as the boss wakes up
+      }
+      // keep Fin inside the arena AND on screen during the fight
+      if (bossActive) player.x = clamp(player.x, cam.x + 24, 214 * TILE - player.w);
+
+      for (const e of enemies) e.update(dt);
+      for (const co of coins) co.update(dt);
+
+      handleEnemyCollisions();
+      handlePickups();
+      updateShockwaves(dt);
+      updateParticles(dt);
+      updateLeaves(dt);
+      updateCamera(dt);
+    }
   } else if (state === 'win') {
     winTimer += dt;
     updateParticles(dt); updateLeaves(dt);
-    if (Math.random() < 0.4) spawnConfetti(cam.x + rand(100, VIEW_W - 100), -20, 4);
-    if (pressed['r'] || pressed['R']) { resetGame(); state = 'playing'; }
+    if (Math.random() < 0.4) spawnConfetti(cam.x + rand(100, VIEW_W - 100), -20, 4, theme.ambient === 'flake' ? ['#ffffff', '#dff4ff', '#bfe4f2', '#9fd8f5'] : undefined);
+    if (pressed['r'] || pressed['R']) startLevel(currentLevel);
+    if (pressed['Enter']) state = 'menu';
   } else if (state === 'gameover') {
     gameOverTimer += dt;
     updateParticles(dt);
-    if (pressed['r'] || pressed['R']) { resetGame(); state = 'playing'; }
+    if (pressed['r'] || pressed['R']) startLevel(currentLevel);
+    if (pressed['Enter']) state = 'menu';
   }
 
   // clear "pressed this frame" markers (do this LAST)
@@ -1805,15 +2686,15 @@ function render() {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   drawSky();
   drawCloudLayer();
-  drawHillLayer(0.25, 330, 60, 0.0016, COL.farHill, '#cfe0f0');   // far hazy hills (fade to sky)
-  drawHillLayer(0.45, 400, 45, 0.0026, COL.midHill, '#a9cf9f');   // mid hills
+  drawHillLayer(0.25, 330, 60, 0.0016, theme.farHill[0], theme.farHill[1]);   // far hazy hills (fade to sky)
+  drawHillLayer(0.45, 400, 45, 0.0026, theme.midHill[0], theme.midHill[1]);   // mid hills
   drawTreeLine();
-  drawGameplay();
+  if (state === 'menu') drawMenuGround(); else drawGameplay();
   drawForeground();
   drawOverlay();
-  if (state !== 'title') drawHUD();   // keep the title screen clean
+  if (state !== 'menu') drawHUD();
 
-  if (state === 'title') drawTitle();
+  if (state === 'menu') drawMenu();
   else if (state === 'win') drawWin();
   else if (state === 'gameover') drawGameOver();
 }
@@ -1831,7 +2712,7 @@ window.addEventListener('resize', fitCanvas);
 fitCanvas();
 
 resetGame();          // build the world
-state = 'title';      // ...but wait on the title screen
+state = 'menu';       // ...and show the menu
 
 // Fixed-timestep game loop: the game logic ALWAYS moves in exact 1/60-second
 // steps, so jump height is identical on a 30fps, 60fps, or 144fps screen.
