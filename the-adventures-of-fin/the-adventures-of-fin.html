@@ -815,9 +815,10 @@ function drawPuffy(ctx, w, h, p) {
   p = p || {};
   const angry = p.angry;
   const slide = p.slide;
+  const windup = p.windup;
   const bob = p.bob || 0;
   const flash = p.flash || 0;
-  const cx = w * 0.5, cy = h * 0.56;
+  const cx = w * 0.5, cy = h * 0.55;
 
   ctx.save();
   if (slide) {
@@ -827,68 +828,76 @@ function drawPuffy(ctx, w, h, p) {
     ctx.translate(-cx, -h);
   }
 
-  // floppy side flippers
-  ctx.fillStyle = '#1d7fb0';
-  const flip = slide ? 0.9 : 0.2;
-  ctx.save(); ctx.translate(w * 0.12, cy + 4); ctx.rotate(flip);
-  ellipse(ctx, 0, 0, 9, 16); ctx.restore();
-  ctx.save(); ctx.translate(w * 0.88, cy + 4); ctx.rotate(-flip);
-  ellipse(ctx, 0, 0, 9, 16); ctx.restore();
-
-  // big round turquoise body
+  // big round turquoise body (bottom sits on the ground)
   const g = ctx.createRadialGradient(cx - 16, cy - 18, 8, cx, cy, w * 0.55);
-  g.addColorStop(0, '#6fd0f0'); g.addColorStop(0.55, '#2fa8d8'); g.addColorStop(1, '#1d7fb0');
+  g.addColorStop(0, '#7fd8f4'); g.addColorStop(0.55, '#33b0dc'); g.addColorStop(1, '#1d7fb0');
   ctx.fillStyle = g;
-  ellipse(ctx, cx, cy, w * 0.47, h * 0.48);
+  ellipse(ctx, cx, cy, w * 0.47, h * 0.46);
+
+  // orange feet in front of the belly at the bottom
+  ctx.fillStyle = '#e8a030';
+  ellipse(ctx, cx - w * 0.17, h - 3, 12, 6);
+  ellipse(ctx, cx + w * 0.17, h - 3, 12, 6);
+  ctx.fillStyle = '#c9861f';
+  ellipse(ctx, cx - w * 0.17, h - 1, 7, 3);
+  ellipse(ctx, cx + w * 0.17, h - 1, 7, 3);
+
+  // floppy side flippers sticking out past the body
+  ctx.fillStyle = '#1d7fb0';
+  const flip = slide ? 1.0 : 0.35;
+  ctx.save(); ctx.translate(w * 0.03, cy + 4); ctx.rotate(flip); ellipse(ctx, 0, 0, 9, 17); ctx.restore();
+  ctx.save(); ctx.translate(w * 0.97, cy + 4); ctx.rotate(-flip); ellipse(ctx, 0, 0, 9, 17); ctx.restore();
+  ctx.fillStyle = 'rgba(248,252,255,0.85)';
+  ctx.save(); ctx.translate(w * 0.03, cy + 8); ctx.rotate(flip); ellipse(ctx, 0, 2, 5, 10); ctx.restore();
+  ctx.save(); ctx.translate(w * 0.97, cy + 8); ctx.rotate(-flip); ellipse(ctx, 0, 2, 5, 10); ctx.restore();
 
   // shaggy fur tufts around the outline
-  ctx.fillStyle = '#2fa8d8';
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2 + 0.4;
-    const tx = cx + Math.cos(a) * w * 0.44, ty = cy + Math.sin(a) * h * 0.44;
+  ctx.fillStyle = '#33b0dc';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + 0.4;
+    const tx = cx + Math.cos(a) * w * 0.44, ty = cy + Math.sin(a) * h * 0.43;
     ctx.beginPath();
-    ctx.moveTo(tx - 5, ty + 5); ctx.lineTo(tx + 2, ty - 6); ctx.lineTo(tx + 6, ty + 5);
+    ctx.moveTo(tx - 5, ty + 5); ctx.lineTo(tx + 2, ty - 7); ctx.lineTo(tx + 6, ty + 5);
     ctx.closePath(); ctx.fill();
   }
 
   // HUGE white fluffy belly bib
   ctx.fillStyle = '#f8fcff';
-  ellipse(ctx, cx, cy + h * 0.14, w * 0.34, h * 0.32);
-  // fluff wisps along the bib edge
-  for (let i = 0; i < 7; i++) {
-    const a = Math.PI * (0.15 + 0.7 * (i / 6));
-    ellipse(ctx, cx + Math.cos(a) * w * 0.30, cy + h * 0.14 + Math.sin(a) * h * 0.30, 5, 5);
+  ellipse(ctx, cx, cy + h * 0.14, w * 0.34, h * 0.30);
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI * (0.12 + 0.76 * (i / 7));
+    ellipse(ctx, cx + Math.cos(a) * w * 0.30, cy + h * 0.14 + Math.sin(a) * h * 0.29, 5.5, 5.5);
   }
   // two tall white lobes around the eyes
-  ellipse(ctx, cx - w * 0.13, cy - h * 0.16, w * 0.15, h * 0.16);
-  ellipse(ctx, cx + w * 0.13, cy - h * 0.16, w * 0.15, h * 0.16);
+  ellipse(ctx, cx - w * 0.14, cy - h * 0.17, w * 0.16, h * 0.17);
+  ellipse(ctx, cx + w * 0.14, cy - h * 0.17, w * 0.16, h * 0.17);
 
-  // tiny black bead eyes with glints
+  // big glossy eyes with a sparkle
   ctx.fillStyle = '#0c0c0c';
-  ellipse(ctx, cx - w * 0.13, cy - h * 0.16, 3.2, 3.2);
-  ellipse(ctx, cx + w * 0.13, cy - h * 0.18, 3.2, 3.2);
+  ellipse(ctx, cx - w * 0.14, cy - h * 0.17, 6.0, 6.2);
+  ellipse(ctx, cx + w * 0.14, cy - h * 0.19, 6.0, 6.2);
   ctx.fillStyle = '#fff';
-  ellipse(ctx, cx - w * 0.13 + 1, cy - h * 0.16 - 1, 1.1, 1.1);
-  ellipse(ctx, cx + w * 0.13 + 1, cy - h * 0.18 - 1, 1.1, 1.1);
+  ellipse(ctx, cx - w * 0.14 - 1.8, cy - h * 0.17 - 2.2, 2.1, 2.2);
+  ellipse(ctx, cx + w * 0.14 - 1.8, cy - h * 0.19 - 2.2, 2.1, 2.2);
 
   // little golden beak nub
   ctx.fillStyle = '#f0c030';
-  ellipse(ctx, cx, cy - h * 0.05, 4.5, 3.4);
+  ellipse(ctx, cx, cy - h * 0.05, 5, 3.6);
   ctx.fillStyle = '#d9a010';
-  ellipse(ctx, cx, cy - h * 0.05 + 1.4, 3.2, 1.6);
+  ellipse(ctx, cx, cy - h * 0.05 + 1.5, 3.4, 1.7);
 
   // angry brows after the first stomp
   if (angry) {
     ctx.strokeStyle = '#134a6a'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(cx - w * 0.20, cy - h * 0.24); ctx.lineTo(cx - w * 0.07, cy - h * 0.20); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx + w * 0.20, cy - h * 0.26); ctx.lineTo(cx + w * 0.07, cy - h * 0.21); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - w * 0.21, cy - h * 0.25); ctx.lineTo(cx - w * 0.08, cy - h * 0.21); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + w * 0.21, cy - h * 0.27); ctx.lineTo(cx + w * 0.08, cy - h * 0.22); ctx.stroke();
   }
 
   // wobbly spiky crown tuft
   ctx.save();
-  ctx.translate(cx, cy - h * 0.44);
+  ctx.translate(cx, cy - h * 0.43);
   ctx.rotate(Math.sin(time0 * 6) * 0.15);
-  ctx.fillStyle = '#2fa8d8';
+  ctx.fillStyle = '#33b0dc';
   ctx.beginPath();
   ctx.moveTo(-8, 4); ctx.lineTo(-3, -12); ctx.lineTo(1, 2);
   ctx.lineTo(6, -10); ctx.lineTo(9, 4); ctx.closePath(); ctx.fill();
@@ -898,11 +907,25 @@ function drawPuffy(ctx, w, h, p) {
   ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(cx, cy, w * 0.47, -1.9, -0.8); ctx.stroke();
 
+  // slide wind-up warning: a red "!" plus a puff at his feet
+  if (windup) {
+    const wob = Math.sin(time0 * 30) * 3;
+    ctx.font = 'bold 36px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff';
+    ctx.strokeText('!', cx + wob, cy - h * 0.62);
+    ctx.fillStyle = '#ff3b30';
+    ctx.fillText('!', cx + wob, cy - h * 0.62);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ellipse(ctx, cx - w * 0.22, h - 6, 7, 4);
+    ellipse(ctx, cx + w * 0.22, h - 6, 7, 4);
+  }
+
   // white hit flash
   if (flash > 0) {
     ctx.globalAlpha = flash * 0.7;
     ctx.fillStyle = '#fff';
-    ellipse(ctx, cx, cy, w * 0.47, h * 0.47);
+    ellipse(ctx, cx, cy, w * 0.47, h * 0.46);
     ctx.globalAlpha = 1;
   }
   ctx.restore();
@@ -1002,14 +1025,17 @@ function drawFallTree(ctx, x, baseY, s, seed) {
 
 function drawSign(ctx, x, baseY, text) {
   ctx.save(); ctx.translate(x, baseY);
+  const long = text.length > 10;
+  const bw = long ? 94 : 68;
+  const fs = long ? 10 : 11;
   ctx.fillStyle = '#6f4a24';
   ctx.fillRect(-3, -26, 6, 26);
   ctx.fillStyle = '#9a6b3a';
-  roundRect(ctx, -34, -52, 68, 28, 5); ctx.fill();
+  roundRect(ctx, -bw / 2, -52, bw, 28, 5); ctx.fill();
   ctx.fillStyle = '#b98247';
-  roundRect(ctx, -34, -52, 68, 28, 5); ctx.strokeStyle = '#6f4a24'; ctx.lineWidth = 2; ctx.stroke();
+  roundRect(ctx, -bw / 2, -52, bw, 28, 5); ctx.strokeStyle = '#6f4a24'; ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = '#3a2410';
-  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, 0, -38);
   ctx.restore();
@@ -1205,7 +1231,7 @@ function buildLevel2() {
   L.platform(80, 10, 3); L.platform(84, 9, 3); L.platform(97, 10, 3); L.platform(101, 9, 3);
   L.coins(80, 9, 3); L.coins(84, 8, 3); L.coins(97, 9, 3); L.coins(101, 8, 3);
   L.checkpoint(72);
-  L.enemy('black', 74, 11); L.enemy('red', 89, 11);
+  L.enemy('black', 74, 11); L.enemy('red', 92, 11);
   L.deco('snowman', 73); L.deco('snowman', 94);
 
   // ── S4 SNOWFALL HOLLOW (108–143): long water at 113–130, crossed on floating ice floes ──
@@ -1329,15 +1355,15 @@ const TURNIP_ANIMS_RED = {
 };
 const PUFFY_ANIMS = {
   idle: { fps: 3, loop: true, frames: [
-    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: e.mode === 'slide', bob: 0, flash: e.hurtFlash })),
-    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: e.mode === 'slide', bob: 1, flash: e.hurtFlash }))
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: e.mode === 'slide', windup: e.mode === 'windup', bob: 0, flash: e.hurtFlash })),
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: e.mode === 'slide', windup: e.mode === 'windup', bob: 1, flash: e.hurtFlash }))
   ]},
   run: { fps: 8, loop: true, frames: [
-    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: true, flash: e.hurtFlash })),
-    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: true, bob: 1, flash: e.hurtFlash }))
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: true, windup: false, flash: e.hurtFlash })),
+    procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: true, windup: false, bob: 1, flash: e.hurtFlash }))
   ]},
-  jump: { fps: 6, loop: false, frames: [procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: false, flash: e.hurtFlash }))] },
-  fall: { fps: 6, loop: false, frames: [procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: false, flash: e.hurtFlash }))] }
+  jump: { fps: 6, loop: false, frames: [procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: false, windup: false, flash: e.hurtFlash }))] },
+  fall: { fps: 6, loop: false, frames: [procFrame((c, e) => drawPuffy(c, e.w, e.h, { angry: e.angry, slide: false, windup: false, flash: e.hurtFlash }))] }
 };
 [PUFFY_ANIMS, TURNIP_ANIMS, TURNIP_ANIMS_RED].forEach(AssetLoader.collect.bind(AssetLoader));
 
@@ -1476,6 +1502,16 @@ class Player {
       this.squash = { x: 1.16, y: 0.82 }; this.squashTimer = 0.10;
     }
 
+    // little snow puffs when Fin skids on ice, so you can feel the slip
+    if (this.slippery && this.onGround && Math.abs(this.vx) > 60 && Math.random() < 0.25) {
+      particles.push({
+        x: this.x + this.w / 2 - this.facing * 10, y: this.y + this.h - 2,
+        vx: -this.facing * 40 + rand(-20, 20), vy: rand(-55, -15),
+        life: 0.45, maxLife: 0.45, color: 'rgba(185,228,255,0.95)',
+        size: rand(3, 6), kind: 'poof', rot: 0, vr: 0, gravity: 130
+      });
+    }
+
     // ---- choose the right animation ----
     if (!this.onGround) setAnim(this, this.vy < 0 ? 'jump' : 'fall');
     else if (Math.abs(this.vx) > 12) setAnim(this, 'run');
@@ -1494,7 +1530,9 @@ class Player {
     // ---- fell into a pit? ----
     if (this.y > WORLD_H + 120) { fallInPit(); return; }
     // ---- splashed into icy water? freeze into a cube! ----
-    if (theme && theme.water && this.y + this.h > 426) {
+    // Only freeze when Fin is really in the air, below the surface, AND his
+    // coyote-time (jump grace) has run out — so a jump off a ledge still works.
+    if (theme && theme.water && !this.onGround && this.coyote <= 0 && this.y + this.h > 438) {
       const col = Math.floor((this.x + this.w / 2) / TILE);
       if (waterZones.some(z => col >= z.colA && col <= z.colB)) freezeInWater();
     }
@@ -2253,12 +2291,14 @@ function drawGameplay() {
     const winter = theme.ambient === 'flake';
     ctx.fillStyle = '#6f4a24';
     ctx.fillRect(sx, 12 * TILE - 110, 5, 110);
-    ctx.fillStyle = winter ? '#7fd0f0' : '#f2b134';
+    ctx.fillStyle = winter ? '#2f8fd0' : '#f2b134';
     ctx.beginPath();
     ctx.moveTo(sx + 5, 12 * TILE - 110);
     ctx.lineTo(sx + 54, 12 * TILE - 92);
     ctx.lineTo(sx + 5, 12 * TILE - 74);
     ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = winter ? 'rgba(15,60,105,0.9)' : 'rgba(150,90,10,0.85)';
+    ctx.lineWidth = 2; ctx.stroke();
     if (winter) {
       ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 1.4;
       for (let k = 0; k < 3; k++) {
@@ -2354,7 +2394,7 @@ function drawHUD() {
   if (bossActive && boss && boss.alive) {
     const barW = 260, barX = VIEW_W / 2 - barW / 2, barY = 30;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    roundRect(ctx, barX - 10, barY - 8, barW + 20, 34, 10); ctx.fill();
+    roundRect(ctx, barX - 10, barY - 8, barW + 20, 44, 10); ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2513,9 +2553,15 @@ function hurtByEnemy(source) {
   player.hearts = Math.max(0, player.hearts - 1);
   SFX.hurt();
   spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#e8203a', 12, 'poof');
-  // knock Fin away from whatever hit him — a little bounce, NOT a teleport
+  // knock Fin away from whatever hit him — a little bounce, NOT a teleport.
+  // If that direction is a gap/water, bounce him the safe way instead, so one
+  // mistake near a ledge can't cost two hearts.
   const srcX = source ? source.x + source.w / 2 : player.x;
-  player.vx = (player.x + player.w / 2 < srcX) ? -230 : 230;
+  let dir = (player.x + player.w / 2 < srcX) ? -1 : 1;
+  const probeY = player.y + player.h + 8;
+  const px = player.x + player.w / 2;
+  if (!solidAtPx(px + dir * 46, probeY) && solidAtPx(px - dir * 46, probeY)) dir = -dir;
+  player.vx = dir * 230;
   player.vy = -300;
   if (player.hearts <= 0) { state = 'gameover'; gameOverTimer = 0; SFX.gameover(); }
 }
@@ -2560,6 +2606,9 @@ function handleEnemyCollisions() {
       player.squash = { x: 0.85, y: 1.15 }; player.squashTimer = 0.12;
 
       if (e === boss) {
+        // a short grace after bouncing off the boss, so his body can't hurt Fin
+        // while he is flashing (invulnerable) on the rebound
+        player.invuln = Math.max(player.invuln, 0.4);
         if (boss.invuln <= 0 && boss.alive) {
           boss.takeHit();
           spawnBurst(e.x + e.w / 2, e.y + 20, theme.ambient === 'flake' ? '#dff4ff' : '#a6c84a', 14, 'poof');
